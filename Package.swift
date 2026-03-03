@@ -12,6 +12,8 @@ let package = Package(
             path: "Sources/FIXLens",
             resources: [
                 .copy("Resources/FIX44.xml"),
+                .copy("Resources/logo-color.png"),
+                .copy("Resources/logo-white.png"),
                 .process("Resources/Assets.xcassets")
             ],
             swiftSettings: [

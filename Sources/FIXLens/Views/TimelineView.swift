@@ -8,6 +8,13 @@ struct TimelineView: View {
     /// binding write triggers an immediate @Observable notification during the
     /// NSTableView selection-change callback.
     @State private var selection: FIXMessage.ID?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var logoImage: NSImage? {
+        let name = colorScheme == .dark ? "logo-white" : "logo-color"
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }
 
     private var cols: Set<String> {
         Set(columnsRaw.split(separator: ",").map(String.init))
@@ -19,8 +26,15 @@ struct TimelineView: View {
         VStack(spacing: 0) {
             // ── Header bar ────────────────────────────────────────────────
             HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                    .foregroundStyle(.secondary)
+                if viewModel.sourceFilename != nil, let img = logoImage {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 20)
+                } else {
+                    Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                        .foregroundStyle(.secondary)
+                }
                 Text("Timeline")
                     .font(.subheadline)
                     .bold()
