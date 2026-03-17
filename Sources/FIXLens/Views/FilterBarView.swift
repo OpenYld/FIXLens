@@ -62,6 +62,12 @@ struct FilterBarView: View {
                 .help("Clear all filters")
             }
 
+            if viewModel.isFiltering {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
+            }
+
             Text(viewModel.filterSummary)
                 .font(.caption)
                 .foregroundStyle(.secondary)

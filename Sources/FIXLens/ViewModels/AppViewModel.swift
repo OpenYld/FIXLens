@@ -18,6 +18,7 @@ final class AppViewModel {
 
     var showAdminMessages: Bool = false { didSet { scheduleFilter() } }
     var isParsing: Bool = false
+    var isFiltering: Bool = false
     var isDictionaryLoaded: Bool = false
     var errorMessage: String? = nil
 
@@ -110,6 +111,7 @@ final class AppViewModel {
         selectedMessageID = nil
         sourceFilename = nil
         parseProgress = 0
+        isFiltering = false
         searchText = ""
         filterMsgType = nil
         filterSide = nil
@@ -158,6 +160,7 @@ final class AppViewModel {
         let side = filterSide
         let status = filterStatus
 
+        isFiltering = true
         filterTask = Task {
             if !search.isEmpty {
                 try? await Task.sleep(for: .milliseconds(200))
@@ -172,6 +175,7 @@ final class AppViewModel {
                     if !search.isEmpty {
                         return msg.msgTypeName.lowercased().contains(search)
                             || (msg.symbol?.lowercased().contains(search) ?? false)
+                            || (msg.securityID?.lowercased().contains(search) ?? false)
                             || (msg.clOrdID?.lowercased().contains(search) ?? false)
                             || msg.sessionDisplay.lowercased().contains(search)
                     }
@@ -180,6 +184,7 @@ final class AppViewModel {
             }.value
             guard !Task.isCancelled else { return }
             self.displayedMessages = result
+            self.isFiltering = false
         }
     }
 }

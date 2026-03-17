@@ -46,6 +46,7 @@ struct FIXMessage: Identifiable, Sendable {
     let ordStatus: String?
     let ordStatusDisplay: String?
     let clOrdID: String?
+    let securityID: String?
     let execType: String?
     let execTypeDisplay: String?
     let text: String?
@@ -86,6 +87,7 @@ struct FIXMessage: Identifiable, Sendable {
         self.ordStatus        = map[39]?.rawValue
         self.ordStatusDisplay = map[39]?.description
         self.clOrdID      = map[11]?.rawValue
+        self.securityID   = map[48]?.rawValue
         self.execType        = map[150]?.rawValue
         self.execTypeDisplay = map[150]?.description
         self.text         = map[58]?.rawValue
