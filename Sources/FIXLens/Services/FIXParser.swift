@@ -87,7 +87,7 @@ struct FIXParser: Sendable {
 
     /// Finds the first occurrence of "8=FIX" in a line and returns everything from there.
     /// Handles log prefixes like timestamps, log levels, direction markers, etc.
-    private static func extractFIXMessage(from line: String) -> String? {
+    static func extractFIXMessage(from line: String) -> String? {
         guard let range = line.range(of: "8=FIX", options: [], range: line.startIndex..<line.endIndex) else {
             return nil
         }
@@ -123,7 +123,7 @@ struct FIXParser: Sendable {
 
     // MARK: - Single message parsing
 
-    private static func parseMessage(
+    static func parseMessage(
         _ raw: String,
         index: Int,
         delimiter: FIXDelimiter,
@@ -161,6 +161,73 @@ struct FIXParser: Sendable {
         return FIXMessage(index: index, rawText: raw, fields: fields, dictionary: dictionary)
     }
 
+    /// Parses a raw FIX message string into a lightweight FIXMessageSummary without
+    /// allocating FIXField objects — used in Analysis mode to keep memory bounded.
+    static func parseSummary(
+        _ raw: String,
+        byteOffset: UInt64,
+        byteLength: Int,
+        index: Int,
+        delimiter: FIXDelimiter,
+        dictionary: FIXDictionary
+    ) -> FIXMessageSummary? {
+        let tokens: [String]
+        if delimiter == .space {
+            tokens = extractSpaceDelimitedTokens(from: raw)
+        } else {
+            tokens = raw.components(separatedBy: delimiter.string)
+        }
+
+        // Build a minimal tag→rawValue map (no FIXField objects)
+        var map: [Int: String] = [:]
+        for token in tokens {
+            let trimmed = token.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty,
+                  let eqIndex = trimmed.firstIndex(of: "=") else { continue }
+            let tagStr = String(trimmed[..<eqIndex])
+            let value  = String(trimmed[trimmed.index(after: eqIndex)...])
+            guard let tag = Int(tagStr), !value.isEmpty, map[tag] == nil else { continue }
+            map[tag] = value
+        }
+
+        guard !map.isEmpty else { return nil }
+
+        let mt  = map[35]
+        let cat = mt.map { dictionary.messageCategory(for: $0) } ?? .other
+
+        func val(_ tag: Int) -> String? { map[tag] }
+        func desc(_ tag: Int) -> String? { map[tag].flatMap { dictionary.fieldDescription(tag: tag, value: $0) } }
+
+        let side = val(54)
+
+        return FIXMessageSummary(
+            id:               UUID(),
+            index:            index,
+            byteOffset:       byteOffset,
+            byteLength:       byteLength,
+            isAdmin:          cat == .admin,
+            category:         cat,
+            msgType:          mt,
+            msgTypeName:      mt.map { dictionary.messageName(for: $0) } ?? "Unknown",
+            sendingTime:      val(52),
+            seqNum:           val(34),
+            senderCompID:     val(49),
+            targetCompID:     val(56),
+            symbol:           val(55),
+            side:             side,
+            sideDisplay:      desc(54) ?? side.map { sideLabel($0) },
+            orderQty:         val(38),
+            price:            val(44),
+            ordStatus:        val(39),
+            ordStatusDisplay: desc(39),
+            clOrdID:          val(11),
+            securityID:       val(48),
+            execType:         val(150),
+            execTypeDisplay:  desc(150),
+            text:             val(58)
+        )
+    }
+
     /// For space-delimited input: extract only tokens that look like tag=value (tag is all digits).
     private static func extractSpaceDelimitedTokens(from raw: String) -> [String] {
         raw.components(separatedBy: " ").filter { looksLikeTagValue($0) }
@@ -173,7 +240,7 @@ struct FIXParser: Sendable {
     }
 }
 
-// MARK: - Streaming
+// MARK: - Streaming (paste / live mode — full FIXMessage objects)
 
 struct ParseUpdate: Sendable {
     let batch: [FIXMessage]
@@ -216,6 +283,158 @@ extension FIXParser {
                 }
                 continuation.finish()
             }
+        }
+    }
+}
+
+// MARK: - Analysis streaming (large / old files — lightweight FIXMessageSummary index)
+
+struct AnalysisUpdate: Sendable {
+    let batch: [FIXMessageSummary]
+    let progress: Double
+    let delimiter: FIXDelimiter
+}
+
+extension FIXParser {
+    /// Streams through a file building a lightweight summary index without loading the
+    /// full content into memory. Tracks byte offsets so individual messages can be
+    /// read on demand later.
+    static func streamAnalysis(
+        fileURL: URL,
+        dictionary: FIXDictionary
+    ) -> AsyncStream<AnalysisUpdate> {
+        AsyncStream { continuation in
+            Task.detached(priority: .userInitiated) {
+                guard let fh = try? FileHandle(forReadingFrom: fileURL) else {
+                    continuation.finish()
+                    return
+                }
+
+                let fileSize: UInt64
+                do {
+                    fileSize = try fh.seekToEnd()
+                    try fh.seek(toOffset: 0)
+                } catch {
+                    try? fh.close()
+                    continuation.finish()
+                    return
+                }
+
+                let total       = Double(max(fileSize, 1))
+                let bufferSize  = 65_536          // 64 KB read chunks
+                let newlineByte = UInt8(0x0A)     // \n
+
+                var lineStartOffset: UInt64 = 0
+                var overflow   = Data()           // bytes after last \n in previous chunk
+                var batch: [FIXMessageSummary] = []
+                var msgIdx     = 0
+                var delimiter  = FIXDelimiter.pipe
+                var delimDetected = false
+                let batchSize  = 2_000
+
+                while true {
+                    guard let chunk = try? fh.read(upToCount: bufferSize),
+                          !chunk.isEmpty else { break }
+
+                    // Work on overflow + fresh chunk as one contiguous block
+                    var data = overflow
+                    data.append(contentsOf: chunk)
+                    overflow = Data()
+
+                    var searchFrom = data.startIndex
+
+                    while let nlPos = data[searchFrom...].firstIndex(of: newlineByte) {
+                        let lineData = Data(data[searchFrom..<nlPos])
+                        let lineByteLength = nlPos - searchFrom  // bytes excluding \n
+
+                        if !lineData.isEmpty,
+                           let rawStr = String(data: lineData, encoding: .utf8) {
+                            let trimmed = rawStr.trimmingCharacters(in: .whitespaces)
+
+                            // Detect delimiter once from the first non-empty line
+                            if !delimDetected, !trimmed.isEmpty {
+                                delimiter = detectDelimiter(String(trimmed.prefix(1_000)))
+                                delimDetected = true
+                            }
+
+                            if let rawMsg = extractFIXMessage(from: trimmed),
+                               let summary = parseSummary(
+                                   rawMsg,
+                                   byteOffset: lineStartOffset,
+                                   byteLength: lineByteLength,
+                                   index: msgIdx,
+                                   delimiter: delimiter,
+                                   dictionary: dictionary
+                               ) {
+                                batch.append(summary)
+                                msgIdx += 1
+
+                                if batch.count >= batchSize {
+                                    let progress = Double(lineStartOffset) / total
+                                    continuation.yield(AnalysisUpdate(batch: batch, progress: progress, delimiter: delimiter))
+                                    batch = []
+                                }
+                            }
+                        }
+
+                        // Advance line start past this line + its \n byte
+                        lineStartOffset += UInt64(lineByteLength) + 1
+                        searchFrom = data.index(after: nlPos)
+                    }
+
+                    // Bytes after the last \n carry over to the next iteration
+                    if searchFrom < data.endIndex {
+                        overflow = Data(data[searchFrom...])
+                    }
+                }
+
+                // Last line with no trailing newline
+                if !overflow.isEmpty,
+                   let rawStr = String(data: overflow, encoding: .utf8) {
+                    let trimmed = rawStr.trimmingCharacters(in: .whitespaces)
+                    if !delimDetected, !trimmed.isEmpty {
+                        delimiter = detectDelimiter(String(trimmed.prefix(1_000)))
+                    }
+                    if let rawMsg = extractFIXMessage(from: trimmed),
+                       let summary = parseSummary(
+                           rawMsg,
+                           byteOffset: lineStartOffset,
+                           byteLength: overflow.count,
+                           index: msgIdx,
+                           delimiter: delimiter,
+                           dictionary: dictionary
+                       ) {
+                        batch.append(summary)
+                    }
+                }
+
+                if !batch.isEmpty {
+                    continuation.yield(AnalysisUpdate(batch: batch, progress: 1.0, delimiter: delimiter))
+                }
+
+                try? fh.close()
+                continuation.finish()
+            }
+        }
+    }
+
+    /// Reads a single raw line from a FileHandleActor at the stored byte offset and
+    /// parses it into a full FIXMessage — used in Analysis mode for the detail view.
+    static func loadFullMessage(
+        summary: FIXMessageSummary,
+        fileHandle: FileHandleActor?,
+        delimiter: FIXDelimiter,
+        dictionary: FIXDictionary
+    ) async -> FIXMessage? {
+        guard let fha = fileHandle, summary.byteLength > 0 else { return nil }
+        do {
+            let data = try await fha.readData(at: summary.byteOffset, length: summary.byteLength)
+            guard let rawLine = String(data: data, encoding: .utf8) else { return nil }
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            guard let rawMsg = extractFIXMessage(from: trimmed) else { return nil }
+            return parseMessage(rawMsg, index: summary.index, delimiter: delimiter, dictionary: dictionary)
+        } catch {
+            return nil
         }
     }
 }

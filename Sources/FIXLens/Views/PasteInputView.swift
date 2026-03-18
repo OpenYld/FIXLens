@@ -44,7 +44,7 @@ struct PasteInputView: View {
                 .buttonStyle(.borderless)
                 .labelStyle(.iconOnly)
                 .help("Clear input and results")
-                .disabled(viewModel.rawInput.isEmpty && viewModel.allMessages.isEmpty)
+                .disabled(viewModel.rawInput.isEmpty && viewModel.allSummaries.isEmpty)
 
                 Button("Parse") {
                     viewModel.parseInput()

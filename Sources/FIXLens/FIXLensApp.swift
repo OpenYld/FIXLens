@@ -60,7 +60,7 @@ struct FIXLensCommands: Commands {
             .disabled(
                 viewModel == nil ||
                 (viewModel?.rawInput.isEmpty == true &&
-                 viewModel?.allMessages.isEmpty == true)
+                 viewModel?.allSummaries.isEmpty == true)
             )
         }
 
@@ -75,7 +75,7 @@ struct FIXLensCommands: Commands {
                 )
             )
             .keyboardShortcut("a", modifiers: [.command, .shift])
-            .disabled(viewModel?.allMessages.isEmpty ?? true)
+            .disabled(viewModel?.allSummaries.isEmpty ?? true)
         }
     }
 

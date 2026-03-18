@@ -6,6 +6,7 @@ import SwiftUI
 // timeline selection changes.
 struct DetailView: View {
     let message: FIXMessage?
+    var isLoading: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,12 +49,19 @@ struct DetailView: View {
 
     private var emptyCard: some View {
         VStack(spacing: 10) {
-            Image(systemName: "text.badge.checkmark")
-                .font(.system(size: 32))
-                .foregroundStyle(.quaternary)
-            Text("No message selected")
-                .foregroundStyle(.tertiary)
-                .font(.callout)
+            if isLoading {
+                ProgressView()
+                Text("Loading message…")
+                    .foregroundStyle(.tertiary)
+                    .font(.callout)
+            } else {
+                Image(systemName: "text.badge.checkmark")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.quaternary)
+                Text("No message selected")
+                    .foregroundStyle(.tertiary)
+                    .font(.callout)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 100)
     }

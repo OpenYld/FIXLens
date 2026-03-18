@@ -132,7 +132,7 @@ struct FIXMessage: Identifiable, Sendable {
 
 // MARK: - Helpers
 
-private func sideLabel(_ raw: String) -> String {
+func sideLabel(_ raw: String) -> String {
     switch raw {
     case "1": return "Buy"
     case "2": return "Sell"

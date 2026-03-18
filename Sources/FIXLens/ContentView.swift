@@ -26,7 +26,7 @@ struct ContentView: View {
             .background(Color(NSColor.windowBackgroundColor))
 
             // ── Right: detail panel, always present, full window height ───
-            DetailView(message: viewModel.selectedMessage)
+            DetailView(message: viewModel.selectedMessage, isLoading: viewModel.isLoadingDetail)
                 .frame(minWidth: 200, idealWidth: 280, maxWidth: detailMaxWidth, maxHeight: .infinity)
                 .background(Color(NSColor.controlBackgroundColor))
                 .onAppear {
@@ -58,6 +58,44 @@ struct ContentView: View {
                         .monospacedDigit()
                 }
 
+                // ── Live mode controls ────────────────────────────────────
+                if viewModel.viewMode == .live {
+                    // Pause / resume tailing
+                    Button {
+                        if viewModel.tailingPaused {
+                            viewModel.resumeTailing()
+                        } else {
+                            viewModel.pauseTailing()
+                        }
+                    } label: {
+                        Label(
+                            viewModel.tailingPaused ? "Resume Tail" : "Pause Tail",
+                            systemImage: viewModel.tailingPaused ? "play.circle" : "pause.circle"
+                        )
+                    }
+                    .help(viewModel.tailingPaused
+                          ? "Resume watching file for new messages"
+                          : "Pause watching file for new messages")
+                    .disabled(viewModel.tailFileGone)
+
+                    // Auto-scroll toggle
+                    Toggle(isOn: Binding(
+                        get: { viewModel.autoScroll },
+                        set: { viewModel.autoScroll = $0 }
+                    )) {
+                        Label(
+                            "Auto-scroll",
+                            systemImage: viewModel.autoScroll
+                                ? "arrow.down.to.line"
+                                : "arrow.down.to.line.compact"
+                        )
+                    }
+                    .toggleStyle(.button)
+                    .help(viewModel.autoScroll
+                          ? "Auto-scroll is on — new messages scroll into view (click to disable)"
+                          : "Auto-scroll is off — click to scroll to new messages automatically")
+                }
+
                 // Column chooser
                 Button {
                     isColumnPickerPresented.toggle()
@@ -81,7 +119,7 @@ struct ContentView: View {
                 }
                 .toggleStyle(.button)
                 .help("Toggle admin messages (Heartbeats, Logon/Logout, etc.)")
-                .disabled(viewModel.allMessages.isEmpty)
+                .disabled(viewModel.allSummaries.isEmpty)
             }
         }
 
