@@ -107,10 +107,17 @@ struct TimelineView: View {
                     .width(min: 65, ideal: 90)
 
                     TableColumn("Type") { msg in
-                        Text(msg.msgTypeName)
-                            .bold()
-                            .lineLimit(1)
-                            .foregroundStyle(msg.category.color)
+                        HStack(spacing: 5) {
+                            if let dot = tradeExecDotColor(msg.execType) {
+                                Circle()
+                                    .fill(dot)
+                                    .frame(width: 7, height: 7)
+                            }
+                            Text(msg.msgTypeName)
+                                .bold()
+                                .lineLimit(1)
+                                .foregroundStyle(msg.category.color)
+                        }
                     }
                     .width(min: 80, ideal: 120)
 
@@ -125,8 +132,8 @@ struct TimelineView: View {
                     }
 
                     if cols.contains("symbol") {
-                        TableColumn("Symbol") { msg in
-                            Text(msg.symbol ?? "")
+                        TableColumn("SecurityID") { msg in
+                            Text(msg.securityID ?? "")
                                 .bold()
                         }
                         .width(min: 50, ideal: 80)
@@ -169,6 +176,7 @@ struct TimelineView: View {
                         TableColumn("Summary") { msg in
                             Text(msg.tradingSummary ?? "")
                                 .lineLimit(1)
+                                .textSelection(.enabled)
                         }
                         // no width — takes remaining space
                     }
@@ -274,6 +282,15 @@ struct TimelineView: View {
     }
 
     // MARK: - Color helpers
+
+    private func tradeExecDotColor(_ execType: String?) -> Color? {
+        switch execType {
+        case "F": return .green
+        case "G": return .orange
+        case "H": return .red
+        default:  return nil
+        }
+    }
 
     private func sideColor(_ side: String?) -> Color {
         switch side {

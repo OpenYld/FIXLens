@@ -18,7 +18,7 @@ enum ColumnRegistry {
     // Max 8 here — Table builder supports 10 total, 2 are always-on (Time, Type).
     static let toggleable: [ColumnSpec] = [
         ColumnSpec(id: "session",   title: "Session"),
-        ColumnSpec(id: "symbol",    title: "Symbol"),
+        ColumnSpec(id: "symbol",    title: "SecurityID"),
         ColumnSpec(id: "side",      title: "Side"),
         ColumnSpec(id: "qty",       title: "Qty"),
         ColumnSpec(id: "price",     title: "Price"),

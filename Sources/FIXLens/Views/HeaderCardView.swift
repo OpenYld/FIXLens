@@ -6,6 +6,15 @@ struct HeaderCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
 
+            // ── Summary sentence ──────────────────────────────────────────
+            if let summary = message.tradingSummary {
+                Text(summary)
+                    .font(.title3.bold())
+                    .foregroundStyle(message.category.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider()
+            }
+
             // ── Top row: type name + timestamp ────────────────────────────
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {

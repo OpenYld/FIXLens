@@ -33,6 +33,7 @@ enum MessageCategory: Sendable, Equatable {
     case allocation
     case marketData
     case quote
+    case quoteAck
     case other
 
     static func from(msgType: String, msgcat: String) -> MessageCategory {
@@ -46,6 +47,7 @@ enum MessageCategory: Sendable, Equatable {
         case "J", "P":  return .allocation
         case "V", "W", "X", "Y": return .marketData
         case "R", "S":  return .quote
+        case "AI":      return .quoteAck
         default:        return .other
         }
     }

@@ -41,6 +41,17 @@ struct FIXMessageSummary: Identifiable, Sendable {
     let execType: String?
     let execTypeDisplay: String?
     let text: String?
+    let ordType: String?
+    let ordTypeDisplay: String?
+    let lastQty: String?
+    let lastPx: String?
+
+    // Quote fields
+    let bidPx: String?
+    let offerPx: String?
+    let bidSize: String?
+    let offerSize: String?
+    let quoteStatus: String?   // tag 297: 0=Accepted/Ack, 1=Cancel
 
     // MARK: - Derived display helpers (mirrors FIXMessage)
 
@@ -57,14 +68,88 @@ struct FIXMessageSummary: Identifiable, Sendable {
     }
 
     var tradingSummary: String? {
-        var parts: [String] = []
-        if let s = sideDisplay   { parts.append(s) }
-        if let q = orderQty      { parts.append(q) }
-        if let sym = symbol      { parts.append(sym) }
-        if let p = price         { parts.append("@ \(p)") }
-        guard !parts.isEmpty else { return nil }
-        if let status = ordStatusDisplay ?? ordStatus { parts.append("— \(status)") }
-        return parts.joined(separator: " ")
+        switch category {
+        case .admin:
+            return text
+
+        case .newOrder:
+            var parts: [String] = []
+            if let s = sideDisplay                       { parts.append(s) }
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            if ordTypeDisplay?.lowercased() == "market" {
+                parts.append("[Market]")
+            } else if let p = formatFIXPrice(price)      {
+                parts.append("@ \(p)")
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .executionReport:
+            var orderParts: [String] = []
+            if let s = sideDisplay                       { orderParts.append(s) }
+            if let q = formatFIXQty(orderQty)            { orderParts.append(q) }
+            if let id = securityID ?? symbol             { orderParts.append(id) }
+            if execType == "1" || execType == "2" || execType == "F" {
+                var fill = ["Fill"]
+                if let lq = formatFIXQty(lastQty)        { fill.append(lq) }
+                if let lp = formatFIXPrice(lastPx)       { fill.append("@ \(lp)") }
+                let fillStr = fill.joined(separator: " ")
+                let orderStr = orderParts.joined(separator: " ")
+                return orderStr.isEmpty ? fillStr : "\(fillStr) — \(orderStr)"
+            } else {
+                if let p = formatFIXPrice(price)         { orderParts.append("@ \(p)") }
+                let orderStr = orderParts.joined(separator: " ")
+                if let st = execTypeDisplay ?? ordStatusDisplay ?? ordStatus {
+                    return orderStr.isEmpty ? st : "\(st) — \(orderStr)"
+                }
+                return orderStr.isEmpty ? nil : orderStr
+            }
+
+        case .cancelRequest:
+            var parts = ["Cancel"]
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            return parts.joined(separator: " ")
+
+        case .cancelReplace:
+            var parts = ["Replace"]
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            if let p = formatFIXPrice(price)             { parts.append("@ \(p)") }
+            return parts.joined(separator: " ")
+
+        case .orderReject:
+            if let t = text { return "Rejected: \(t)" }
+            return "Rejected"
+
+        case .allocation:
+            var parts: [String] = []
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .quote:
+            return quoteSummary(
+                sideDisplay: sideDisplay, side: side,
+                securityID: securityID ?? symbol,
+                bidPx: bidPx, bidSize: bidSize,
+                offerPx: offerPx, offerSize: offerSize
+            )
+
+        case .quoteAck:
+            let qs = quoteSummary(
+                sideDisplay: sideDisplay, side: side,
+                securityID: securityID ?? symbol,
+                bidPx: bidPx, bidSize: bidSize,
+                offerPx: offerPx, offerSize: offerSize
+            )
+            let prefix = quoteStatus == "1" ? "Cancel" : "Ack"
+            if let qs { return "\(prefix) — \(qs)" }
+            return nil
+
+        case .marketData, .other:
+            return nil
+        }
     }
 }
 
@@ -96,5 +181,14 @@ extension FIXMessageSummary {
         self.execType        = message.execType
         self.execTypeDisplay = message.execTypeDisplay
         self.text            = message.text
+        self.ordType         = message.ordType
+        self.ordTypeDisplay  = message.ordTypeDisplay
+        self.lastQty         = message.lastQty
+        self.lastPx          = message.lastPx
+        self.bidPx           = message.bidPx
+        self.offerPx         = message.offerPx
+        self.bidSize         = message.bidSize
+        self.offerSize       = message.offerSize
+        self.quoteStatus     = message.quoteStatus
     }
 }

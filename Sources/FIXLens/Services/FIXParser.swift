@@ -224,7 +224,16 @@ struct FIXParser: Sendable {
             securityID:       val(48),
             execType:         val(150),
             execTypeDisplay:  desc(150),
-            text:             val(58)
+            text:             val(58),
+            ordType:          val(40),
+            ordTypeDisplay:   desc(40),
+            lastQty:          val(32),
+            lastPx:           val(31),
+            bidPx:            val(132),
+            offerPx:          val(133),
+            bidSize:          val(134),
+            offerSize:        val(135),
+            quoteStatus:      val(297)
         )
     }
 

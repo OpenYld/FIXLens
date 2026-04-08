@@ -50,6 +50,17 @@ struct FIXMessage: Identifiable, Sendable {
     let execType: String?
     let execTypeDisplay: String?
     let text: String?
+    let ordType: String?
+    let ordTypeDisplay: String?
+    let lastQty: String?
+    let lastPx: String?
+
+    // Quote fields
+    let bidPx: String?
+    let offerPx: String?
+    let bidSize: String?
+    let offerSize: String?
+    let quoteStatus: String?   // tag 297: 0=Accepted/Ack, 1=Cancel
 
     // Private lookup map (first occurrence wins for duplicate tags)
     private let fieldMap: [Int: FIXField]
@@ -91,6 +102,15 @@ struct FIXMessage: Identifiable, Sendable {
         self.execType        = map[150]?.rawValue
         self.execTypeDisplay = map[150]?.description
         self.text         = map[58]?.rawValue
+        self.ordType      = map[40]?.rawValue
+        self.ordTypeDisplay = map[40]?.description
+        self.lastQty      = map[32]?.rawValue
+        self.lastPx       = map[31]?.rawValue
+        self.bidPx        = map[132]?.rawValue
+        self.offerPx      = map[133]?.rawValue
+        self.bidSize      = map[134]?.rawValue
+        self.offerSize    = map[135]?.rawValue
+        self.quoteStatus  = map[297]?.rawValue
     }
 
     func field(tag: Int) -> FIXField? { fieldMap[tag] }
@@ -110,27 +130,161 @@ struct FIXMessage: Identifiable, Sendable {
         "\(senderCompID ?? "?") → \(targetCompID ?? "?")"
     }
 
-    /// Compact human-readable sentence: "Buy 1,000 IBM @ 150.25 — Filled"
-    /// Returns nil when none of the trading fields are present (admin, market data, etc.).
+    /// Compact human-readable sentence tailored to message category.
+    /// Examples: "Buy 1,000 IBM @ 150.25 — Fill 500 @ 149.99", "Cancel IBM", "Rejected: Unknown order"
     var tradingSummary: String? {
-        var parts: [String] = []
+        switch category {
+        case .admin:
+            return text
 
-        if let s = sideDisplay              { parts.append(s) }
-        if let q = orderQty                 { parts.append(q) }
-        if let sym = symbol                 { parts.append(sym) }
-        if let p = price                    { parts.append("@ \(p)") }
+        case .newOrder:
+            var parts: [String] = []
+            if let s = sideDisplay                       { parts.append(s) }
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            if ordTypeDisplay?.lowercased() == "market" {
+                parts.append("[Market]")
+            } else if let p = formatFIXPrice(price)      {
+                parts.append("@ \(p)")
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
 
-        guard !parts.isEmpty else { return nil }
+        case .executionReport:
+            var orderParts: [String] = []
+            if let s = sideDisplay                       { orderParts.append(s) }
+            if let q = formatFIXQty(orderQty)            { orderParts.append(q) }
+            if let id = securityID ?? symbol             { orderParts.append(id) }
+            if execType == "1" || execType == "2" || execType == "F" {
+                var fill = ["Fill"]
+                if let lq = formatFIXQty(lastQty)        { fill.append(lq) }
+                if let lp = formatFIXPrice(lastPx)       { fill.append("@ \(lp)") }
+                let fillStr = fill.joined(separator: " ")
+                let orderStr = orderParts.joined(separator: " ")
+                return orderStr.isEmpty ? fillStr : "\(fillStr) — \(orderStr)"
+            } else {
+                if let p = formatFIXPrice(price)         { orderParts.append("@ \(p)") }
+                let orderStr = orderParts.joined(separator: " ")
+                if let st = execTypeDisplay ?? ordStatusDisplay ?? ordStatus {
+                    return orderStr.isEmpty ? st : "\(st) — \(orderStr)"
+                }
+                return orderStr.isEmpty ? nil : orderStr
+            }
 
-        if let status = ordStatusDisplay ?? ordStatus {
-            parts.append("— \(status)")
+        case .cancelRequest:
+            var parts = ["Cancel"]
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            return parts.joined(separator: " ")
+
+        case .cancelReplace:
+            var parts = ["Replace"]
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            if let p = formatFIXPrice(price)             { parts.append("@ \(p)") }
+            return parts.joined(separator: " ")
+
+        case .orderReject:
+            if let t = text { return "Rejected: \(t)" }
+            return "Rejected"
+
+        case .allocation:
+            var parts: [String] = []
+            if let q = formatFIXQty(orderQty)            { parts.append(q) }
+            if let id = securityID ?? symbol             { parts.append(id) }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .quote:
+            return quoteSummary(
+                sideDisplay: sideDisplay, side: side,
+                securityID: securityID ?? symbol,
+                bidPx: bidPx, bidSize: bidSize,
+                offerPx: offerPx, offerSize: offerSize
+            )
+
+        case .quoteAck:
+            let qs = quoteSummary(
+                sideDisplay: sideDisplay, side: side,
+                securityID: securityID ?? symbol,
+                bidPx: bidPx, bidSize: bidSize,
+                offerPx: offerPx, offerSize: offerSize
+            )
+            let prefix = quoteStatus == "1" ? "Cancel" : "Ack"
+            if let qs { return "\(prefix) — \(qs)" }
+            return nil
+
+        case .marketData, .other:
+            return nil
         }
-
-        return parts.joined(separator: " ")
     }
 }
 
 // MARK: - Helpers
+
+/// Formats a raw FIX quantity string with thousand separators.
+/// Returns nil when the input is nil; returns the raw string if it cannot be parsed.
+func formatFIXQty(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    guard let d = Double(raw) else { return raw }
+    if d.truncatingRemainder(dividingBy: 1) == 0 {
+        return Int(d).formatted(.number)
+    }
+    return d.formatted(.number.precision(.fractionLength(0...4)))
+}
+
+/// Formats a raw FIX price string with at least 2 and up to 8 decimal places.
+/// Returns nil when the input is nil; returns the raw string if it cannot be parsed.
+func formatFIXPrice(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    guard let d = Double(raw) else { return raw }
+    return d.formatted(.number.precision(.fractionLength(2...8)))
+}
+
+/// Returns true when a quote side is cancelled — i.e. both price and size are absent or zero.
+func isQuoteSideCancelled(px: String?, size: String?) -> Bool {
+    func isAbsentOrZero(_ v: String?) -> Bool {
+        guard let v else { return true }
+        return (Double(v) ?? 0) == 0
+    }
+    return isAbsentOrZero(px) && isAbsentOrZero(size)
+}
+
+/// Builds the Quote summary for a single-sided quote message.
+/// Side (tag 54) determines which price/size fields apply:
+///   Buy (1)        → BidPx (132) / BidSize (134)
+///   Sell (2, 5, 6) → OfferPx (133) / OfferSize (135)
+/// Normal format: "<side> <qty> <securityID> @ <price>"
+/// Cancel format: "<side> Cancel <securityID>"
+func quoteSummary(sideDisplay: String?, side: String?, securityID: String?,
+                  bidPx: String?, bidSize: String?,
+                  offerPx: String?, offerSize: String?) -> String? {
+    let px: String?
+    let sz: String?
+
+    switch side {
+    case "1":            // Buy → bid fields
+        px = bidPx;  sz = bidSize
+    case "2", "5", "6":  // Sell / Sell Short → offer fields
+        px = offerPx; sz = offerSize
+    default:
+        return nil
+    }
+
+    let sideStr = sideDisplay ?? (side == "1" ? "Buy" : "Sell")
+    var parts: [String] = []
+
+    if isQuoteSideCancelled(px: px, size: sz) {
+        parts.append("Cancel")
+        parts.append(sideStr)
+        if let id = securityID { parts.append(id) }
+    } else {
+        parts.append(sideStr)
+        if let q = formatFIXQty(sz)    { parts.append(q) }
+        if let id = securityID         { parts.append(id) }
+        if let p = formatFIXPrice(px)  { parts.append("@ \(p)") }
+    }
+
+    return parts.joined(separator: " ")
+}
 
 func sideLabel(_ raw: String) -> String {
     switch raw {

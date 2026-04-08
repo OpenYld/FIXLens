@@ -48,6 +48,14 @@ struct FilterBarView: View {
             .labelsHidden()
             .frame(maxWidth: 110)
 
+            Toggle(isOn: $viewModel.filterTradesOnly) {
+                Label("Trades", systemImage: "arrow.left.arrow.right.circle.fill")
+            }
+            .toggleStyle(.button)
+            .font(.caption)
+            .tint(.green)
+            .help("Show only fills, trade corrections, and trade cancels (ExecType F/G/H)")
+
             Spacer()
 
             // Active filter count + clear

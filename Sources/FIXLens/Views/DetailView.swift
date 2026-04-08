@@ -40,7 +40,7 @@ struct DetailView: View {
                             .padding(12)
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 160)
+                .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 400)
                 .background(.background)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -14,6 +14,7 @@ extension MessageCategory {
         case .allocation:      return .cyan
         case .marketData:      return .indigo
         case .quote:           return .orange
+        case .quoteAck:        return .teal
         case .other:           return .primary
         }
     }
@@ -30,6 +31,7 @@ extension MessageCategory {
         case .allocation:      return Color.cyan.opacity(0.06)
         case .marketData:      return Color.indigo.opacity(0.05)
         case .quote:           return Color.orange.opacity(0.05)
+        case .quoteAck:        return Color.teal.opacity(0.06)
         case .other:           return Color.clear
         }
     }
@@ -41,11 +43,12 @@ extension MessageCategory {
         case .newOrder:        return "Order"
         case .executionReport: return "Exec"
         case .cancelRequest:   return "Cancel"
-        case .cancelReplace:   return "Amend"
+        case .cancelReplace:   return "Replace"
         case .orderReject:     return "Reject"
         case .allocation:      return "Alloc"
         case .marketData:      return "MktData"
         case .quote:           return "Quote"
+        case .quoteAck:        return "QuoteAck"
         case .other:           return "Other"
         }
     }

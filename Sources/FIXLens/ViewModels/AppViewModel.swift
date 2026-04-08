@@ -70,9 +70,10 @@ final class AppViewModel {
 
     var showAdminMessages: Bool = false { didSet { scheduleFilter() } }
     var searchText: String = ""      { didSet { scheduleFilter() } }
-    var filterMsgType: String? = nil { didSet { scheduleFilter() } }
-    var filterSide: String? = nil    { didSet { scheduleFilter() } }
-    var filterStatus: String? = nil  { didSet { scheduleFilter() } }
+    var filterMsgType: String? = nil    { didSet { scheduleFilter() } }
+    var filterSide: String? = nil       { didSet { scheduleFilter() } }
+    var filterStatus: String? = nil     { didSet { scheduleFilter() } }
+    var filterTradesOnly: Bool = false  { didSet { scheduleFilter() } }
 
     // MARK: - File / mode state
 
@@ -105,7 +106,7 @@ final class AppViewModel {
     // MARK: - Derived
 
     var hasActiveFilters: Bool {
-        !searchText.isEmpty || filterMsgType != nil || filterSide != nil || filterStatus != nil
+        !searchText.isEmpty || filterMsgType != nil || filterSide != nil || filterStatus != nil || filterTradesOnly
     }
 
     var filterSummary: String {
@@ -129,10 +130,11 @@ final class AppViewModel {
     // MARK: - Actions
 
     func clearFilters() {
-        searchText    = ""
-        filterMsgType = nil
-        filterSide    = nil
-        filterStatus  = nil
+        searchText       = ""
+        filterMsgType    = nil
+        filterSide       = nil
+        filterStatus     = nil
+        filterTradesOnly = false
     }
 
     func loadDictionary() async {
@@ -203,6 +205,7 @@ final class AppViewModel {
         filterMsgType        = nil
         filterSide           = nil
         filterStatus         = nil
+        filterTradesOnly     = false
     }
 
     // MARK: - Tailing control
@@ -324,12 +327,13 @@ final class AppViewModel {
 
     private func scheduleFilter() {
         filterTask?.cancel()
-        let summaries  = allSummaries
-        let showAdmin  = showAdminMessages
-        let search     = searchText.lowercased()
-        let msgType    = filterMsgType
-        let side       = filterSide
-        let status     = filterStatus
+        let summaries   = allSummaries
+        let showAdmin   = showAdminMessages
+        let search      = searchText.lowercased()
+        let msgType     = filterMsgType
+        let side        = filterSide
+        let status      = filterStatus
+        let tradesOnly  = filterTradesOnly
 
         isFiltering = true
         filterTask = Task {
@@ -343,9 +347,9 @@ final class AppViewModel {
                     if let t = msgType, msg.msgType != t { return false }
                     if let s = side,    msg.side    != s { return false }
                     if let st = status, msg.ordStatus != st { return false }
+                    if tradesOnly, !["F","G","H"].contains(msg.execType ?? "") { return false }
                     if !search.isEmpty {
                         return msg.msgTypeName.lowercased().contains(search)
-                            || (msg.symbol?.lowercased().contains(search) ?? false)
                             || (msg.securityID?.lowercased().contains(search) ?? false)
                             || (msg.clOrdID?.lowercased().contains(search) ?? false)
                             || msg.sessionDisplay.lowercased().contains(search)
@@ -454,20 +458,21 @@ final class AppViewModel {
                 self.allSummaries.append(contentsOf: newSummaries)
 
                 // Apply active filters to only the new summaries
-                let showAdmin = self.showAdminMessages
-                let search    = self.searchText.lowercased()
-                let msgType   = self.filterMsgType
-                let side      = self.filterSide
-                let status    = self.filterStatus
+                let showAdmin  = self.showAdminMessages
+                let search     = self.searchText.lowercased()
+                let msgType    = self.filterMsgType
+                let side       = self.filterSide
+                let status     = self.filterStatus
+                let tradesOnly = self.filterTradesOnly
 
                 let newVisible = newSummaries.filter { msg in
                     if !showAdmin && msg.isAdmin { return false }
                     if let t = msgType,  msg.msgType   != t  { return false }
                     if let s = side,     msg.side      != s  { return false }
                     if let st = status,  msg.ordStatus != st { return false }
+                    if tradesOnly, !["F","G","H"].contains(msg.execType ?? "") { return false }
                     if !search.isEmpty {
                         return msg.msgTypeName.lowercased().contains(search)
-                            || (msg.symbol?.lowercased().contains(search) ?? false)
                             || (msg.securityID?.lowercased().contains(search) ?? false)
                             || (msg.clOrdID?.lowercased().contains(search) ?? false)
                             || msg.sessionDisplay.lowercased().contains(search)
