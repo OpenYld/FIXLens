@@ -69,6 +69,7 @@ final class AppViewModel {
     // MARK: - Filter state
 
     var showAdminMessages: Bool = false { didSet { scheduleFilter() } }
+    var showLocalTime: Bool = false
     var searchText: String = ""      { didSet { scheduleFilter() } }
     var filterMsgType: String? = nil    { didSet { scheduleFilter() } }
     var filterSide: String? = nil       { didSet { scheduleFilter() } }

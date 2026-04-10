@@ -76,6 +76,15 @@ struct FIXLensCommands: Commands {
             )
             .keyboardShortcut("a", modifiers: [.command, .shift])
             .disabled(viewModel?.allSummaries.isEmpty ?? true)
+            Toggle(
+                "Show Local Time",
+                isOn: Binding(
+                    get: { viewModel?.showLocalTime ?? false },
+                    set: { viewModel?.showLocalTime = $0 }
+                )
+            )
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(viewModel?.allSummaries.isEmpty ?? true)
         }
     }
 

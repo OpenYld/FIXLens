@@ -63,6 +63,15 @@ struct FIXMessageSummary: Identifiable, Sendable {
         return t
     }
 
+    func displayTime(local: Bool) -> String {
+        guard let t = sendingTime else { return "—" }
+        guard local else { return formattedTime }
+        if let date = FIXTimeParsers.parse(t) {
+            return FIXTimeParsers.localTimeString(from: date, hasMs: t.contains("."))
+        }
+        return formattedTime
+    }
+
     var sessionDisplay: String {
         "\(senderCompID ?? "?") → \(targetCompID ?? "?")"
     }
@@ -89,8 +98,22 @@ struct FIXMessageSummary: Identifiable, Sendable {
             if let s = sideDisplay                       { orderParts.append(s) }
             if let q = formatFIXQty(orderQty)            { orderParts.append(q) }
             if let id = securityID ?? symbol             { orderParts.append(id) }
-            if execType == "1" || execType == "2" || execType == "F" {
-                var fill = ["Fill"]
+            if execType == "1" || execType == "2" || execType == "F" || execType == "G" || execType == "H" {
+                let fillPrefix: String
+                if execType == "G" {
+                    fillPrefix = "Correct"
+                } else if execType == "H" {
+                    fillPrefix = "Cancel"
+                } else if execType == "F" && ordStatus == "4" {
+                    fillPrefix = "Cancel"
+                } else if execType == "F" && ordStatus == "5" {
+                    fillPrefix = "Correct"
+                } else if execType == "F" && ordStatus == "1" {
+                    fillPrefix = "Partial"
+                } else {
+                    fillPrefix = "Fill"
+                }
+                var fill = [fillPrefix]
                 if let lq = formatFIXQty(lastQty)        { fill.append(lq) }
                 if let lp = formatFIXPrice(lastPx)       { fill.append("@ \(lp)") }
                 let fillStr = fill.joined(separator: " ")
@@ -190,5 +213,43 @@ extension FIXMessageSummary {
         self.bidSize         = message.bidSize
         self.offerSize       = message.offerSize
         self.quoteStatus     = message.quoteStatus
+    }
+}
+
+// MARK: - UTC → local time helpers
+
+private enum FIXTimeParsers {
+    // FIX SendingTime formats: YYYYMMDD-HH:MM:SS or YYYYMMDD-HH:MM:SS.sss
+    private static let withMs: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyyMMdd-HH:mm:ss.SSS"
+        return f
+    }()
+    private static let withoutMs: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyyMMdd-HH:mm:ss"
+        return f
+    }()
+    private static let localDisplay: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = .current
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+    private static let localDisplayMs: DateFormatter = {
+        let f = DateFormatter()
+        f.timeZone = .current
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
+    static func parse(_ raw: String) -> Date? {
+        withMs.date(from: raw) ?? withoutMs.date(from: raw)
+    }
+
+    static func localTimeString(from date: Date, hasMs: Bool) -> String {
+        hasMs ? localDisplayMs.string(from: date) : localDisplay.string(from: date)
     }
 }

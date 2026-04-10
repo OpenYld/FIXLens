@@ -154,8 +154,22 @@ struct FIXMessage: Identifiable, Sendable {
             if let s = sideDisplay                       { orderParts.append(s) }
             if let q = formatFIXQty(orderQty)            { orderParts.append(q) }
             if let id = securityID ?? symbol             { orderParts.append(id) }
-            if execType == "1" || execType == "2" || execType == "F" {
-                var fill = ["Fill"]
+            if execType == "1" || execType == "2" || execType == "F" || execType == "G" || execType == "H" {
+                let fillPrefix: String
+                if execType == "G" {
+                    fillPrefix = "Correct"
+                } else if execType == "H" {
+                    fillPrefix = "Cancel"
+                } else if execType == "F" && ordStatus == "4" {
+                    fillPrefix = "Cancel"
+                } else if execType == "F" && ordStatus == "5" {
+                    fillPrefix = "Correct"
+                } else if execType == "F" && ordStatus == "1" {
+                    fillPrefix = "Partial"
+                } else {
+                    fillPrefix = "Fill"
+                }
+                var fill = [fillPrefix]
                 if let lq = formatFIXQty(lastQty)        { fill.append(lq) }
                 if let lp = formatFIXPrice(lastPx)       { fill.append("@ \(lp)") }
                 let fillStr = fill.joined(separator: " ")

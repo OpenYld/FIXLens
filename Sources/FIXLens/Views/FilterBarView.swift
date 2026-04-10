@@ -53,7 +53,7 @@ struct FilterBarView: View {
             }
             .toggleStyle(.button)
             .font(.caption)
-            .tint(.green)
+            .tint(.teal)
             .help("Show only fills, trade corrections, and trade cancels (ExecType F/G/H)")
 
             Spacer()

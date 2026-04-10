@@ -20,7 +20,7 @@ struct AboutView: View {
                 .font(.largeTitle)
                 .bold()
 
-            Text("Version 1.0.3")
+            Text("Version 1.0.4")
                 .foregroundStyle(.secondary)
 
             Text("By Hilton Lipschitz and Claude Code")

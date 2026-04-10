@@ -100,7 +100,7 @@ struct TimelineView: View {
 
                     // ── Always visible ────────────────────────────────────
                     TableColumn("Time") { (msg: FIXMessageSummary) in
-                        Text(msg.formattedTime)
+                        Text(msg.displayTime(local: viewModel.showLocalTime))
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(msg.category.color)
                     }
@@ -108,9 +108,9 @@ struct TimelineView: View {
 
                     TableColumn("Type") { msg in
                         HStack(spacing: 5) {
-                            if let dot = tradeExecDotColor(msg.execType) {
+                            if tradeExecDotColor(msg.execType) != nil {
                                 Circle()
-                                    .fill(dot)
+                                    .fill(msg.category.color)
                                     .frame(width: 7, height: 7)
                             }
                             Text(msg.msgTypeName)

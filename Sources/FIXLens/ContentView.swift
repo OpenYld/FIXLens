@@ -120,6 +120,17 @@ struct ContentView: View {
                 .toggleStyle(.button)
                 .help("Toggle admin messages (Heartbeats, Logon/Logout, etc.)")
                 .disabled(viewModel.allSummaries.isEmpty)
+
+                // UTC / local time toggle
+                Toggle(isOn: $viewModel.showLocalTime) {
+                    Label(
+                        viewModel.showLocalTime ? "Local Time" : "UTC Time",
+                        systemImage: viewModel.showLocalTime ? "clock" : "globe"
+                    )
+                }
+                .toggleStyle(.button)
+                .help("Toggle timeline between UTC and local PC time")
+                .disabled(viewModel.allSummaries.isEmpty)
             }
         }
 
