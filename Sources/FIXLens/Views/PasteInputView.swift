@@ -1,4 +1,15 @@
 import SwiftUI
+import AppKit
+
+private extension NSView {
+    func findTextView() -> NSTextView? {
+        if let tv = self as? NSTextView { return tv }
+        for sub in subviews {
+            if let found = sub.findTextView() { return found }
+        }
+        return nil
+    }
+}
 
 struct PasteInputView: View {
     @Bindable var viewModel: AppViewModel
@@ -65,6 +76,19 @@ struct PasteInputView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .autocorrectionDisabled()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    // Disable spell-check squiggles — FIX protocol text is not English prose.
+                    DispatchQueue.main.async {
+                        NSApp.windows.forEach { window in
+                            if let tv = window.contentView?.findTextView() {
+                                tv.isContinuousSpellCheckingEnabled = false
+                                tv.isAutomaticSpellingCorrectionEnabled = false
+                                tv.isAutomaticQuoteSubstitutionEnabled = false
+                                tv.isAutomaticDashSubstitutionEnabled = false
+                            }
+                        }
+                    }
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -5,6 +5,7 @@ struct ContentView: View {
     @State private var viewModel = AppViewModel()
     @State private var isFileImporterPresented = false
     @State private var isColumnPickerPresented = false
+    @State private var isDragTargeted = false
     /// Starts narrow to force HSplitView's initial position, then opens up after layout.
     @State private var detailMaxWidth: CGFloat = 300
 
@@ -50,17 +51,21 @@ struct ContentView: View {
                 .help("Open a FIX log file (⌘O)")
             }
 
-            ToolbarItemGroup(placement: .automatic) {
+            // ── Message count (informational) ─────────────────────────────
+            ToolbarItem(placement: .automatic) {
                 if !viewModel.filterSummary.isEmpty {
                     Text(viewModel.filterSummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+            }
 
-                // ── Live mode controls ────────────────────────────────────
+            // ── Live mode controls (only visible while tailing) ───────────
+            ToolbarItemGroup(placement: .automatic) {
                 if viewModel.viewMode == .live {
-                    // Pause / resume tailing
+                    Divider()
+
                     Button {
                         if viewModel.tailingPaused {
                             viewModel.resumeTailing()
@@ -78,7 +83,6 @@ struct ContentView: View {
                           : "Pause watching file for new messages")
                     .disabled(viewModel.tailFileGone)
 
-                    // Auto-scroll toggle
                     Toggle(isOn: Binding(
                         get: { viewModel.autoScroll },
                         set: { viewModel.autoScroll = $0 }
@@ -95,8 +99,12 @@ struct ContentView: View {
                           ? "Auto-scroll is on — new messages scroll into view (click to disable)"
                           : "Auto-scroll is off — click to scroll to new messages automatically")
                 }
+            }
 
-                // Column chooser
+            // ── Persistent view controls ──────────────────────────────────
+            ToolbarItemGroup(placement: .automatic) {
+                Divider()
+
                 Button {
                     isColumnPickerPresented.toggle()
                 } label: {
@@ -107,7 +115,6 @@ struct ContentView: View {
                     ColumnPickerView()
                 }
 
-                // Show/hide admin
                 Toggle(isOn: Binding(
                     get: { viewModel.showAdminMessages },
                     set: { viewModel.showAdminMessages = $0 }
@@ -121,7 +128,6 @@ struct ContentView: View {
                 .help("Toggle admin messages (Heartbeats, Logon/Logout, etc.)")
                 .disabled(viewModel.allSummaries.isEmpty)
 
-                // UTC / local time toggle
                 Toggle(isOn: $viewModel.showLocalTime) {
                     Label(
                         viewModel.showLocalTime ? "Local Time" : "UTC Time",
@@ -162,6 +168,46 @@ struct ContentView: View {
             Button("OK") { viewModel.errorMessage = nil }
         } message: { msg in
             Text(msg)
+        }
+
+        // MARK: - File drop (whole window)
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            guard let provider = providers.first else { return false }
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                let url: URL? = {
+                    if let data = item as? Data { return URL(dataRepresentation: data, relativeTo: nil) }
+                    if let nsurl = item as? NSURL { return nsurl as URL }
+                    return nil
+                }()
+                guard let url else { return }
+                Task { @MainActor in await viewModel.loadFromURL(url) }
+            }
+            return true
+        }
+        .overlay {
+            if isDragTargeted {
+                ZStack {
+                    Color.accentColor.opacity(0.12)
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                        .padding(16)
+                    VStack(spacing: 12) {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 52))
+                        Text("Drop FIX Log File")
+                            .font(.title2.bold())
+                    }
+                    .foregroundStyle(Color.accentColor)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+        }
+
+        // MARK: - Dock-icon / Finder open
+        .onReceive(NotificationCenter.default.publisher(for: .openFileRequest)) { note in
+            guard let url = note.object as? URL else { return }
+            Task { await viewModel.loadFromURL(url) }
         }
 
         // MARK: - Startup

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct FieldTableView: View {
     let message: FIXMessage?
@@ -35,6 +36,31 @@ struct FieldTableView: View {
                 .width(min: 90, ideal: 220)
             }
             .tableStyle(.inset)
+            .onCopyCommand {
+                guard let id = selectedFieldID,
+                      let field = msg.fields.first(where: { $0.id == id }) else { return [] }
+                return [NSItemProvider(object: field.rawValue as NSString)]
+            }
+            .contextMenu(forSelectionType: FIXField.ID.self) { ids in
+                if let id = ids.first,
+                   let field = msg.fields.first(where: { $0.id == id }) {
+                    Button("Copy Value") {
+                        copyToPasteboard(field.rawValue)
+                    }
+                    Button("Copy as \(field.tag)=\(field.rawValue)") {
+                        copyToPasteboard("\(field.tag)=\(field.rawValue)")
+                    }
+                    Button("Copy Field Name") {
+                        copyToPasteboard(field.name)
+                    }
+                    if let desc = field.description {
+                        Divider()
+                        Button("Copy Description") {
+                            copyToPasteboard(desc)
+                        }
+                    }
+                }
+            }
             .onChange(of: msg.id) { selectedFieldID = nil }
         } else {
             ContentUnavailableView(
@@ -44,4 +70,9 @@ struct FieldTableView: View {
             )
         }
     }
+}
+
+private func copyToPasteboard(_ string: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(string, forType: .string)
 }

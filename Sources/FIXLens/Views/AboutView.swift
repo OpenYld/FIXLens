@@ -20,7 +20,7 @@ struct AboutView: View {
                 .font(.largeTitle)
                 .bold()
 
-            Text("Version 1.0.4")
+            Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
                 .foregroundStyle(.secondary)
 
             Text("By Hilton Lipschitz and Claude Code")

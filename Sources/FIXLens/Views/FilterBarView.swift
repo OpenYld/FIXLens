@@ -17,6 +17,7 @@ struct FilterBarView: View {
             }
             .pickerStyle(.menu)
             .labelsHidden()
+            .accessibilityLabel("Filter by message type")
             .frame(maxWidth: 130)
 
             // Side picker
@@ -30,6 +31,7 @@ struct FilterBarView: View {
             }
             .pickerStyle(.menu)
             .labelsHidden()
+            .accessibilityLabel("Filter by side")
             .frame(maxWidth: 95)
 
             // Status picker
@@ -46,6 +48,7 @@ struct FilterBarView: View {
             }
             .pickerStyle(.menu)
             .labelsHidden()
+            .accessibilityLabel("Filter by order status")
             .frame(maxWidth: 110)
 
             Toggle(isOn: $viewModel.filterTradesOnly) {

@@ -15,7 +15,8 @@ enum ViewMode {
 // MARK: - Scroll notification
 
 extension Notification.Name {
-    static let scrollToBottom = Notification.Name("FIXLens.scrollToBottom")
+    static let scrollToBottom  = Notification.Name("FIXLens.scrollToBottom")
+    static let openFileRequest = Notification.Name("FIXLens.openFileRequest")
 }
 
 // MARK: - AppViewModel
@@ -68,8 +69,12 @@ final class AppViewModel {
 
     // MARK: - Filter state
 
-    var showAdminMessages: Bool = false { didSet { scheduleFilter() } }
-    var showLocalTime: Bool = false
+    var showAdminMessages: Bool = UserDefaults.standard.bool(forKey: "fixlens.showAdmin") {
+        didSet { UserDefaults.standard.set(showAdminMessages, forKey: "fixlens.showAdmin"); scheduleFilter() }
+    }
+    var showLocalTime: Bool = UserDefaults.standard.bool(forKey: "fixlens.showLocalTime") {
+        didSet { UserDefaults.standard.set(showLocalTime, forKey: "fixlens.showLocalTime") }
+    }
     var searchText: String = ""      { didSet { scheduleFilter() } }
     var filterMsgType: String? = nil    { didSet { scheduleFilter() } }
     var filterSide: String? = nil       { didSet { scheduleFilter() } }
@@ -86,7 +91,9 @@ final class AppViewModel {
     private(set) var isTailing: Bool = false
     private(set) var tailingPaused: Bool = false
     private(set) var tailFileGone: Bool = false
-    var autoScroll: Bool = false
+    var autoScroll: Bool = UserDefaults.standard.bool(forKey: "fixlens.autoScroll") {
+        didSet { UserDefaults.standard.set(autoScroll, forKey: "fixlens.autoScroll") }
+    }
 
     // MARK: - Private
 
@@ -103,6 +110,7 @@ final class AppViewModel {
     @ObservationIgnored private var isSecurityScoped = false
     @ObservationIgnored private var analysisFileHandle: FileHandleActor? = nil
     @ObservationIgnored private var detectedDelimiter: FIXDelimiter = .pipe
+    @ObservationIgnored private var tempDecompressedURL: URL? = nil
 
     // MARK: - Derived
 
@@ -130,6 +138,15 @@ final class AppViewModel {
 
     // MARK: - Actions
 
+    /// Returns the raw FIX text for a message ID.
+    /// Available immediately in live/paste mode; in analysis mode only when that
+    /// message is the currently loaded detail.
+    func rawText(for id: FIXMessage.ID) -> String? {
+        if let msg = allMessages.first(where: { $0.id == id }) { return msg.rawText }
+        if loadedDetailMessage?.id == id { return loadedDetailMessage?.rawText }
+        return nil
+    }
+
     func clearFilters() {
         searchText       = ""
         filterMsgType    = nil
@@ -153,33 +170,57 @@ final class AppViewModel {
     }
 
     func loadFromURL(_ url: URL) async {
+        let isGzip = url.pathExtension.lowercased() == "gz"
+
         // Clean up any prior state
         stopTailing()
         releaseSecurityScope()
+        cleanupTempFile()
         if let fh = analysisFileHandle { try? await fh.close() }
         analysisFileHandle = nil
         tailFileGone   = false
         tailRawBuffer  = Data()
 
+        // Decompress .gz to a temp file, then treat it as a regular (non-live) file.
+        let fileURL: URL
+        if isGzip {
+            isParsing = true
+            let accessing = url.startAccessingSecurityScopedResource()
+            guard let tempURL = await decompressGzip(url) else {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+                isParsing = false
+                errorMessage = "Could not decompress \(url.lastPathComponent)"
+                return
+            }
+            if accessing { url.stopAccessingSecurityScopedResource() }
+            tempDecompressedURL = tempURL
+            fileURL = tempURL
+            addToRecentFiles(url)
+        } else {
+            fileURL = url
+        }
+
         // Determine mode from file attributes
-        let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        let attrs = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)) ?? [:]
         let modDate  = attrs[.modificationDate] as? Date ?? .distantPast
         let fileSize = attrs[.size] as? Int ?? 0
-        let isToday  = Calendar.current.isDateInToday(modDate)
+        // .gz files are never live-tailed — they are static archives
+        let isToday  = !isGzip && Calendar.current.isDateInToday(modDate)
         let isLive   = isToday && fileSize < 10_000_000
 
-        let accessing = url.startAccessingSecurityScopedResource()
+        let accessing = isGzip ? false : fileURL.startAccessingSecurityScopedResource()
 
         if isLive {
-            await loadLiveMode(url, accessing: accessing)
+            await loadLiveMode(fileURL, accessing: accessing)
         } else {
-            await loadAnalysisMode(url, accessing: accessing)
+            await loadAnalysisMode(fileURL, accessing: accessing, displayURL: isGzip ? url : nil)
         }
     }
 
     func clear() {
         stopTailing()
         releaseSecurityScope()
+        cleanupTempFile()
         Task { if let fh = analysisFileHandle { try? await fh.close() } }
         analysisFileHandle = nil
 
@@ -258,15 +299,15 @@ final class AppViewModel {
         }
     }
 
-    private func loadAnalysisMode(_ url: URL, accessing: Bool) async {
+    private func loadAnalysisMode(_ url: URL, accessing: Bool, displayURL: URL? = nil) async {
         isSecurityScoped = accessing
-        sourceURL        = url
-        sourceFilename   = url.lastPathComponent
+        sourceURL        = displayURL ?? url   // reload via original path (important for .gz)
+        sourceFilename   = (displayURL ?? url).lastPathComponent
         viewMode         = .analysis
         rawInput         = ""
         autoScroll       = false
 
-        addToRecentFiles(url)
+        if displayURL == nil { addToRecentFiles(url) }  // gz already added in loadFromURL
 
         // Open a persistent FileHandle for on-demand detail reads
         if let fh = try? FileHandle(forReadingFrom: url) {
@@ -505,13 +546,39 @@ final class AppViewModel {
         isSecurityScoped = false
     }
 
+    // MARK: - Private: gzip decompression
+
+    private func cleanupTempFile() {
+        guard let temp = tempDecompressedURL else { return }
+        try? FileManager.default.removeItem(at: temp)
+        tempDecompressedURL = nil
+    }
+
+    private func decompressGzip(_ url: URL) async -> URL? {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".log")
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+                guard let out = FileHandle(forWritingAtPath: tempURL.path) else { return nil }
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/gunzip")
+                proc.arguments     = ["-c", url.path]
+                proc.standardOutput = out
+                proc.standardError  = FileHandle.nullDevice
+                try proc.run()
+                proc.waitUntilExit()
+                try out.close()
+                return proc.terminationStatus == 0 ? tempURL : nil
+            } catch {
+                return nil
+            }
+        }.value
+    }
+
     // MARK: - Recent files
 
     private func addToRecentFiles(_ url: URL) {
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
-        var paths = UserDefaults.standard.stringArray(forKey: "fixlens.recentFiles") ?? []
-        paths.removeAll { $0 == url.path }
-        paths.insert(url.path, at: 0)
-        UserDefaults.standard.set(Array(paths.prefix(10)), forKey: "fixlens.recentFiles")
     }
 }

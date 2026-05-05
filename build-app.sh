@@ -73,9 +73,9 @@ cat > "${APP_DIR}/Contents/Info.plist" << EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.3</string>
+    <string>1.0.5</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>5</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSHighResolutionCapable</key>
@@ -84,6 +84,38 @@ cat > "${APP_DIR}/Contents/Info.plist" << EOF
     <string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>FIX Log File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.log</string>
+                <string>public.plain-text</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>log</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Compressed FIX Log File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>gz</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF

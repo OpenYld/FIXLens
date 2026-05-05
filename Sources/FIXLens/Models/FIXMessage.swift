@@ -132,7 +132,9 @@ struct FIXMessage: Identifiable, Sendable {
 
     /// Compact human-readable sentence tailored to message category.
     /// Examples: "Buy 1,000 IBM @ 150.25 — Fill 500 @ 149.99", "Cancel IBM", "Rejected: Unknown order"
+    /// Falls back to tag-58 Text if no structured summary can be built.
     var tradingSummary: String? {
+        let primary: String? = {
         switch category {
         case .admin:
             return text
@@ -229,6 +231,8 @@ struct FIXMessage: Identifiable, Sendable {
         case .marketData, .other:
             return nil
         }
+        }()
+        return primary ?? text
     }
 }
 

@@ -118,6 +118,7 @@ struct TimelineView: View {
                                 .lineLimit(1)
                                 .foregroundStyle(msg.category.color)
                         }
+                        .draggable(viewModel.rawText(for: msg.id) ?? msg.tradingSummary ?? msg.msgTypeName)
                     }
                     .width(min: 80, ideal: 120)
 
@@ -192,6 +193,32 @@ struct TimelineView: View {
                     }
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
+                .onCopyCommand {
+                    guard let id = selection,
+                          let msg = viewModel.allSummaries.first(where: { $0.id == id }) else { return [] }
+                    let text = viewModel.rawText(for: id) ?? msg.tradingSummary ?? msg.msgTypeName
+                    return [NSItemProvider(object: text as NSString)]
+                }
+                .contextMenu(forSelectionType: FIXMessageSummary.ID.self) { ids in
+                    if let id = ids.first,
+                       let msg = viewModel.allSummaries.first(where: { $0.id == id }) {
+                        if let summary = msg.tradingSummary {
+                            Button("Copy Summary") { copyToPasteboard(summary) }
+                        }
+                        if let raw = viewModel.rawText(for: id) {
+                            Button("Copy Raw FIX Message") { copyToPasteboard(raw) }
+                        }
+                        if msg.securityID != nil || msg.clOrdID != nil {
+                            Divider()
+                        }
+                        if let v = msg.securityID {
+                            Button("Copy SecurityID: \(v)") { copyToPasteboard(v) }
+                        }
+                        if let v = msg.clOrdID {
+                            Button("Copy ClOrdID: \(v)") { copyToPasteboard(v) }
+                        }
+                    }
+                }
                 // Sync local selection → viewModel (user clicked a row)
                 .onChange(of: selection) { _, newID in
                     viewModel.selectedMessageID = newID
@@ -413,6 +440,7 @@ private struct ScrollPositionObserver: NSViewRepresentable {
 
 private struct LiveIndicatorView: View {
     @State private var pulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 4) {
@@ -421,14 +449,22 @@ private struct LiveIndicatorView: View {
                 .frame(width: 7, height: 7)
                 .scaleEffect(pulsing ? 1.4 : 1.0)
                 .animation(
-                    .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                    reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
                     value: pulsing
                 )
-                .onAppear { pulsing = true }
+                .onAppear { if !reduceMotion { pulsing = true } }
             Text("Live")
                 .font(.caption)
                 .bold()
                 .foregroundStyle(.green)
         }
+        .accessibilityLabel("Live — tailing file")
     }
+}
+
+// MARK: - Pasteboard helper
+
+private func copyToPasteboard(_ string: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(string, forType: .string)
 }

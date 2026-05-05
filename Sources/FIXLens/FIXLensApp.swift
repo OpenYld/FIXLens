@@ -46,7 +46,6 @@ struct FIXLensCommands: Commands {
                     }
                     Divider()
                     Button("Clear Menu") {
-                        UserDefaults.standard.removeObject(forKey: "fixlens.recentFiles")
                         NSDocumentController.shared.clearRecentDocuments(nil)
                     }
                 }
@@ -57,11 +56,28 @@ struct FIXLensCommands: Commands {
             Button(viewModel?.sourceFilename != nil ? "Close File" : "Clear") {
                 viewModel?.clear()
             }
+            .keyboardShortcut("w", modifiers: .command)
             .disabled(
                 viewModel == nil ||
                 (viewModel?.rawInput.isEmpty == true &&
                  viewModel?.allSummaries.isEmpty == true)
             )
+        }
+
+        // ── Help menu ─────────────────────────────────────────────────────
+        CommandGroup(replacing: .help) {
+            Button("FIXLens Help") { openAboutWindow() }
+        }
+
+        // ── Edit menu: expose Find shortcut so it's discoverable ─────────
+        // SwiftUI's .searchable already responds to ⌘F via the responder chain.
+        // This entry makes the shortcut visible so users can discover it.
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            Button("Find…") {
+                // .searchable handles focus via the responder chain; no explicit action needed.
+            }
+            .keyboardShortcut("f", modifiers: .command)
         }
 
         // ── View menu ─────────────────────────────────────────────────────
@@ -89,9 +105,8 @@ struct FIXLensCommands: Commands {
     }
 
     private var recentURLs: [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: "fixlens.recentFiles") ?? []
-        return paths.compactMap { URL(fileURLWithPath: $0) }
-                   .filter { FileManager.default.fileExists(atPath: $0.path) }
+        NSDocumentController.shared.recentDocumentURLs
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     @MainActor
@@ -112,6 +127,11 @@ private class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        NotificationCenter.default.post(name: .openFileRequest, object: url)
     }
 }
 
@@ -138,5 +158,32 @@ struct FIXLensApp: App {
             AboutView()
         }
         .windowResizability(.contentSize)
+
+        Settings {
+            FIXLensSettingsView()
+        }
+    }
+}
+
+// MARK: - Settings view
+
+private struct FIXLensSettingsView: View {
+    @AppStorage("fixlens.showLocalTime") private var showLocalTime = false
+    @AppStorage("fixlens.showAdmin")     private var showAdmin     = false
+    @AppStorage("fixlens.autoScroll")    private var autoScroll    = false
+
+    var body: some View {
+        Form {
+            Section("Display") {
+                Toggle("Show local time (instead of UTC)", isOn: $showLocalTime)
+                Toggle("Show admin messages by default", isOn: $showAdmin)
+            }
+            Section("Live Mode") {
+                Toggle("Auto-scroll to newest message", isOn: $autoScroll)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 360)
+        .padding()
     }
 }

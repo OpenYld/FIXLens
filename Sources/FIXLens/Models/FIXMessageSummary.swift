@@ -77,6 +77,7 @@ struct FIXMessageSummary: Identifiable, Sendable {
     }
 
     var tradingSummary: String? {
+        let primary: String? = {
         switch category {
         case .admin:
             return text
@@ -173,6 +174,8 @@ struct FIXMessageSummary: Identifiable, Sendable {
         case .marketData, .other:
             return nil
         }
+        }()
+        return primary ?? text
     }
 }
 
