@@ -118,7 +118,6 @@ struct TimelineView: View {
                                 .lineLimit(1)
                                 .foregroundStyle(msg.category.color)
                         }
-                        .draggable(viewModel.rawText(for: msg.id) ?? msg.tradingSummary ?? msg.msgTypeName)
                     }
                     .width(min: 80, ideal: 120)
 
