@@ -233,7 +233,21 @@ struct FIXParser: Sendable {
             offerPx:          val(133),
             bidSize:          val(134),
             offerSize:        val(135),
-            quoteStatus:      val(297)
+            quoteStatus:      val(297),
+            tradingSessionID:      val(336),
+            tradSesStatus:         val(340),
+            tradSesStatusDisplay:  desc(340),
+            mdUpdateAction:        val(279),
+            mdUpdateActionDisplay: desc(279),
+            mdEntryType:           val(269),
+            mdEntryTypeDisplay:    desc(269),
+            mdEntrySize:           val(271),
+            mdEntryPx:             val(270),
+            ioiID:                 val(23),
+            ioiTransType:          val(28),
+            ioiTransTypeDisplay:   desc(28),
+            ioiQty:                val(27),
+            ioiQtyDisplay:         desc(27)
         )
     }
 

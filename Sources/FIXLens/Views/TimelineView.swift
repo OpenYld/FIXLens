@@ -182,8 +182,8 @@ struct TimelineView: View {
                     }
 
                     if cols.contains("clOrdID") {
-                        TableColumn("ClOrdID") { msg in
-                            Text(msg.clOrdID ?? "")
+                        TableColumn("ClientId") { msg in
+                            Text(msg.category == .ioi ? (msg.ioiID ?? "") : (msg.clOrdID ?? ""))
                                 .font(.system(.body, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -207,13 +207,15 @@ struct TimelineView: View {
                         if let raw = viewModel.rawText(for: id) {
                             Button("Copy Raw FIX Message") { copyToPasteboard(raw) }
                         }
-                        if msg.securityID != nil || msg.clOrdID != nil {
+                        if msg.securityID != nil || msg.clOrdID != nil || msg.ioiID != nil {
                             Divider()
                         }
                         if let v = msg.securityID {
                             Button("Copy SecurityID: \(v)") { copyToPasteboard(v) }
                         }
-                        if let v = msg.clOrdID {
+                        if msg.category == .ioi, let v = msg.ioiID {
+                            Button("Copy IOIID: \(v)") { copyToPasteboard(v) }
+                        } else if let v = msg.clOrdID {
                             Button("Copy ClOrdID: \(v)") { copyToPasteboard(v) }
                         }
                     }

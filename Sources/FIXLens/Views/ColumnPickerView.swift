@@ -24,7 +24,7 @@ enum ColumnRegistry {
         ColumnSpec(id: "price",     title: "Price"),
         ColumnSpec(id: "ordStatus", title: "Status"),
         ColumnSpec(id: "summary",   title: "Summary"),
-        ColumnSpec(id: "clOrdID",   title: "ClOrdID"),
+        ColumnSpec(id: "clOrdID",   title: "ClientId"),
     ]
 
     /// Default enabled set (comma-separated IDs).

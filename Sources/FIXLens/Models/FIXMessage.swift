@@ -62,6 +62,26 @@ struct FIXMessage: Identifiable, Sendable {
     let offerSize: String?
     let quoteStatus: String?   // tag 297: 0=Accepted/Ack, 1=Cancel
 
+    // Trading session fields
+    let tradingSessionID: String?       // tag 336
+    let tradSesStatus: String?          // tag 340 raw
+    let tradSesStatusDisplay: String?   // tag 340 desc
+
+    // Market data fields
+    let mdUpdateAction: String?         // tag 279 raw
+    let mdUpdateActionDisplay: String?  // tag 279 desc
+    let mdEntryType: String?            // tag 269 raw
+    let mdEntryTypeDisplay: String?     // tag 269 desc
+    let mdEntrySize: String?            // tag 271
+    let mdEntryPx: String?              // tag 270
+
+    // IOI fields
+    let ioiID: String?                  // tag 23
+    let ioiTransType: String?           // tag 28 raw
+    let ioiTransTypeDisplay: String?    // tag 28 desc
+    let ioiQty: String?                 // tag 27 raw
+    let ioiQtyDisplay: String?          // tag 27 desc
+
     // Private lookup map (first occurrence wins for duplicate tags)
     private let fieldMap: [Int: FIXField]
 
@@ -111,6 +131,21 @@ struct FIXMessage: Identifiable, Sendable {
         self.bidSize      = map[134]?.rawValue
         self.offerSize    = map[135]?.rawValue
         self.quoteStatus  = map[297]?.rawValue
+
+        self.tradingSessionID      = map[336]?.rawValue
+        self.tradSesStatus         = map[340]?.rawValue
+        self.tradSesStatusDisplay  = map[340]?.description
+        self.mdUpdateAction        = map[279]?.rawValue
+        self.mdUpdateActionDisplay = map[279]?.description
+        self.mdEntryType           = map[269]?.rawValue
+        self.mdEntryTypeDisplay    = map[269]?.description
+        self.mdEntrySize           = map[271]?.rawValue
+        self.mdEntryPx             = map[270]?.rawValue
+        self.ioiID                 = map[23]?.rawValue
+        self.ioiTransType          = map[28]?.rawValue
+        self.ioiTransTypeDisplay   = map[28]?.description
+        self.ioiQty                = map[27]?.rawValue
+        self.ioiQtyDisplay         = map[27]?.description
     }
 
     func field(tag: Int) -> FIXField? { fieldMap[tag] }
@@ -228,7 +263,32 @@ struct FIXMessage: Identifiable, Sendable {
             if let qs { return "\(prefix) — \(qs)" }
             return nil
 
-        case .marketData, .other:
+        case .tradingSessionStatus:
+            let session = tradingSessionID ?? "Session"
+            let status  = tradSesStatusDisplay ?? tradSesStatus ?? ""
+            return "\(session) — \(status)"
+
+        case .marketData:
+            var parts: [String] = []
+            if msgType == "X", let action = mdUpdateActionDisplay ?? mdUpdateAction { parts.append(action) }
+            let rawEntryType = mdEntryTypeDisplay ?? mdEntryType
+            if let et = rawEntryType?.replacingOccurrences(of: "Trading Session ", with: "") { parts.append(et) }
+            if let sz = formatFIXQty(mdEntrySize)         { parts.append(sz) }
+            if let id = securityID ?? symbol               { parts.append(id) }
+            if let px = formatFIXPrice(mdEntryPx)         { parts.append("@ \(px)") }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .ioi:
+            var parts: [String] = []
+            if let t = ioiTransTypeDisplay ?? ioiTransType { parts.append(t) }
+            if let s = sideDisplay                          { parts.append(s) }
+            let qty = formatFIXQty(ioiQty) ?? ioiQtyDisplay ?? ioiQty
+            if let q = qty                                  { parts.append(q) }
+            if let id = securityID ?? symbol                { parts.append("of \(id)") }
+            if let p = formatFIXPrice(price)               { parts.append("@ \(p)") }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .other:
             return nil
         }
         }()

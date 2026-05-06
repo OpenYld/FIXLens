@@ -53,6 +53,26 @@ struct FIXMessageSummary: Identifiable, Sendable {
     let offerSize: String?
     let quoteStatus: String?   // tag 297: 0=Accepted/Ack, 1=Cancel
 
+    // Trading session fields
+    let tradingSessionID: String?       // tag 336
+    let tradSesStatus: String?          // tag 340 raw
+    let tradSesStatusDisplay: String?   // tag 340 desc
+
+    // Market data fields
+    let mdUpdateAction: String?         // tag 279 raw
+    let mdUpdateActionDisplay: String?  // tag 279 desc
+    let mdEntryType: String?            // tag 269 raw
+    let mdEntryTypeDisplay: String?     // tag 269 desc
+    let mdEntrySize: String?            // tag 271
+    let mdEntryPx: String?              // tag 270
+
+    // IOI fields
+    let ioiID: String?                  // tag 23
+    let ioiTransType: String?           // tag 28 raw
+    let ioiTransTypeDisplay: String?    // tag 28 desc
+    let ioiQty: String?                 // tag 27 raw
+    let ioiQtyDisplay: String?          // tag 27 desc
+
     // MARK: - Derived display helpers (mirrors FIXMessage)
 
     var formattedTime: String {
@@ -171,7 +191,32 @@ struct FIXMessageSummary: Identifiable, Sendable {
             if let qs { return "\(prefix) — \(qs)" }
             return nil
 
-        case .marketData, .other:
+        case .tradingSessionStatus:
+            let session = tradingSessionID ?? "Session"
+            let status  = tradSesStatusDisplay ?? tradSesStatus ?? ""
+            return "\(session) — \(status)"
+
+        case .marketData:
+            var parts: [String] = []
+            if msgType == "X", let action = mdUpdateActionDisplay ?? mdUpdateAction { parts.append(action) }
+            let rawEntryType = mdEntryTypeDisplay ?? mdEntryType
+            if let et = rawEntryType?.replacingOccurrences(of: "Trading Session ", with: "") { parts.append(et) }
+            if let sz = formatFIXQty(mdEntrySize)         { parts.append(sz) }
+            if let id = securityID ?? symbol               { parts.append(id) }
+            if let px = formatFIXPrice(mdEntryPx)         { parts.append("@ \(px)") }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .ioi:
+            var parts: [String] = []
+            if let t = ioiTransTypeDisplay ?? ioiTransType { parts.append(t) }
+            if let s = sideDisplay                          { parts.append(s) }
+            let qty = formatFIXQty(ioiQty) ?? ioiQtyDisplay ?? ioiQty
+            if let q = qty                                  { parts.append(q) }
+            if let id = securityID ?? symbol                { parts.append("of \(id)") }
+            if let p = formatFIXPrice(price)               { parts.append("@ \(p)") }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+
+        case .other:
             return nil
         }
         }()
@@ -216,6 +261,20 @@ extension FIXMessageSummary {
         self.bidSize         = message.bidSize
         self.offerSize       = message.offerSize
         self.quoteStatus     = message.quoteStatus
+        self.tradingSessionID      = message.tradingSessionID
+        self.tradSesStatus         = message.tradSesStatus
+        self.tradSesStatusDisplay  = message.tradSesStatusDisplay
+        self.mdUpdateAction        = message.mdUpdateAction
+        self.mdUpdateActionDisplay = message.mdUpdateActionDisplay
+        self.mdEntryType           = message.mdEntryType
+        self.mdEntryTypeDisplay    = message.mdEntryTypeDisplay
+        self.mdEntrySize           = message.mdEntrySize
+        self.mdEntryPx             = message.mdEntryPx
+        self.ioiID                 = message.ioiID
+        self.ioiTransType          = message.ioiTransType
+        self.ioiTransTypeDisplay   = message.ioiTransTypeDisplay
+        self.ioiQty                = message.ioiQty
+        self.ioiQtyDisplay         = message.ioiQtyDisplay
     }
 }
 

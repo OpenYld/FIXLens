@@ -14,8 +14,10 @@ extension MessageCategory {
         case .allocation:      return .cyan
         case .marketData:      return .indigo
         case .quote:           return .orange
-        case .quoteAck:        return .teal
-        case .other:           return .primary
+        case .quoteAck:              return .teal
+        case .tradingSessionStatus:  return .mint
+        case .ioi:                   return .pink
+        case .other:                 return .primary
         }
     }
 
@@ -31,8 +33,10 @@ extension MessageCategory {
         case .allocation:      return Color.cyan.opacity(0.06)
         case .marketData:      return Color.indigo.opacity(0.05)
         case .quote:           return Color.orange.opacity(0.05)
-        case .quoteAck:        return Color.teal.opacity(0.06)
-        case .other:           return Color.clear
+        case .quoteAck:              return Color.teal.opacity(0.06)
+        case .tradingSessionStatus:  return Color.mint.opacity(0.06)
+        case .ioi:                   return Color.pink.opacity(0.06)
+        case .other:                 return Color.clear
         }
     }
 
@@ -48,8 +52,10 @@ extension MessageCategory {
         case .allocation:      return "Alloc"
         case .marketData:      return "MktData"
         case .quote:           return "Quote"
-        case .quoteAck:        return "QuoteAck"
-        case .other:           return "Other"
+        case .quoteAck:              return "QuoteAck"
+        case .tradingSessionStatus:  return "TradSes"
+        case .ioi:                   return "IOI"
+        case .other:                 return "Other"
         }
     }
 }
