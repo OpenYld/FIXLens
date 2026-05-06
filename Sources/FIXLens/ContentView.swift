@@ -83,10 +83,7 @@ struct ContentView: View {
                           : "Pause watching file for new messages")
                     .disabled(viewModel.tailFileGone)
 
-                    Toggle(isOn: Binding(
-                        get: { viewModel.autoScroll },
-                        set: { viewModel.autoScroll = $0 }
-                    )) {
+                    Toggle(isOn: $vm.autoScroll) {
                         Label(
                             "Auto-scroll",
                             systemImage: viewModel.autoScroll
@@ -115,10 +112,7 @@ struct ContentView: View {
                     ColumnPickerView()
                 }
 
-                Toggle(isOn: Binding(
-                    get: { viewModel.showAdminMessages },
-                    set: { viewModel.showAdminMessages = $0 }
-                )) {
+                Toggle(isOn: $vm.showAdminMessages) {
                     Label(
                         viewModel.showAdminMessages ? "Hide Admin" : "Show Admin",
                         systemImage: viewModel.showAdminMessages ? "eye.slash" : "eye"
@@ -128,7 +122,7 @@ struct ContentView: View {
                 .help("Toggle admin messages (Heartbeats, Logon/Logout, etc.)")
                 .disabled(viewModel.allSummaries.isEmpty)
 
-                Toggle(isOn: $viewModel.showLocalTime) {
+                Toggle(isOn: $vm.showLocalTime) {
                     Label(
                         viewModel.showLocalTime ? "Local Time" : "UTC Time",
                         systemImage: viewModel.showLocalTime ? "clock" : "globe"

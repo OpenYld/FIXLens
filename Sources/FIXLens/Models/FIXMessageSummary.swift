@@ -6,7 +6,7 @@ import Foundation
 /// In Live mode it is built from a full FIXMessage (byteOffset/byteLength are 0).
 /// In Analysis mode it is built directly from raw bytes with a stored file offset,
 /// so the full field list can be read on demand without keeping everything in RAM.
-struct FIXMessageSummary: Identifiable, Sendable {
+struct FIXMessageSummary: Identifiable, Sendable, TradingSummarizable {
 
     let id: UUID
     let index: Int
@@ -96,132 +96,6 @@ struct FIXMessageSummary: Identifiable, Sendable {
         "\(senderCompID ?? "?") → \(targetCompID ?? "?")"
     }
 
-    var tradingSummary: String? {
-        let primary: String? = {
-        switch category {
-        case .admin:
-            return text
-
-        case .newOrder:
-            var parts: [String] = []
-            if let s = sideDisplay                       { parts.append(s) }
-            if let q = formatFIXQty(orderQty)            { parts.append(q) }
-            if let id = securityID ?? symbol             { parts.append(id) }
-            if ordTypeDisplay?.lowercased() == "market" {
-                parts.append("[Market]")
-            } else if let p = formatFIXPrice(price)      {
-                parts.append("@ \(p)")
-            }
-            return parts.isEmpty ? nil : parts.joined(separator: " ")
-
-        case .executionReport:
-            var orderParts: [String] = []
-            if let s = sideDisplay                       { orderParts.append(s) }
-            if let q = formatFIXQty(orderQty)            { orderParts.append(q) }
-            if let id = securityID ?? symbol             { orderParts.append(id) }
-            if execType == "1" || execType == "2" || execType == "F" || execType == "G" || execType == "H" {
-                let fillPrefix: String
-                if execType == "G" {
-                    fillPrefix = "Correct"
-                } else if execType == "H" {
-                    fillPrefix = "Cancel"
-                } else if execType == "F" && ordStatus == "4" {
-                    fillPrefix = "Cancel"
-                } else if execType == "F" && ordStatus == "5" {
-                    fillPrefix = "Correct"
-                } else if execType == "F" && ordStatus == "1" {
-                    fillPrefix = "Partial"
-                } else {
-                    fillPrefix = "Fill"
-                }
-                var fill = [fillPrefix]
-                if let lq = formatFIXQty(lastQty)        { fill.append(lq) }
-                if let lp = formatFIXPrice(lastPx)       { fill.append("@ \(lp)") }
-                let fillStr = fill.joined(separator: " ")
-                let orderStr = orderParts.joined(separator: " ")
-                return orderStr.isEmpty ? fillStr : "\(fillStr) — \(orderStr)"
-            } else {
-                if let p = formatFIXPrice(price)         { orderParts.append("@ \(p)") }
-                let orderStr = orderParts.joined(separator: " ")
-                if let st = execTypeDisplay ?? ordStatusDisplay ?? ordStatus {
-                    return orderStr.isEmpty ? st : "\(st) — \(orderStr)"
-                }
-                return orderStr.isEmpty ? nil : orderStr
-            }
-
-        case .cancelRequest:
-            var parts = ["Cancel"]
-            if let q = formatFIXQty(orderQty)            { parts.append(q) }
-            if let id = securityID ?? symbol             { parts.append(id) }
-            return parts.joined(separator: " ")
-
-        case .cancelReplace:
-            var parts = ["Replace"]
-            if let q = formatFIXQty(orderQty)            { parts.append(q) }
-            if let id = securityID ?? symbol             { parts.append(id) }
-            if let p = formatFIXPrice(price)             { parts.append("@ \(p)") }
-            return parts.joined(separator: " ")
-
-        case .orderReject:
-            if let t = text { return "Rejected: \(t)" }
-            return "Rejected"
-
-        case .allocation:
-            var parts: [String] = []
-            if let q = formatFIXQty(orderQty)            { parts.append(q) }
-            if let id = securityID ?? symbol             { parts.append(id) }
-            return parts.isEmpty ? nil : parts.joined(separator: " ")
-
-        case .quote:
-            return quoteSummary(
-                sideDisplay: sideDisplay, side: side,
-                securityID: securityID ?? symbol,
-                bidPx: bidPx, bidSize: bidSize,
-                offerPx: offerPx, offerSize: offerSize
-            )
-
-        case .quoteAck:
-            let qs = quoteSummary(
-                sideDisplay: sideDisplay, side: side,
-                securityID: securityID ?? symbol,
-                bidPx: bidPx, bidSize: bidSize,
-                offerPx: offerPx, offerSize: offerSize
-            )
-            let prefix = quoteStatus == "1" ? "Cancel" : "Ack"
-            if let qs { return "\(prefix) — \(qs)" }
-            return nil
-
-        case .tradingSessionStatus:
-            let session = tradingSessionID ?? "Session"
-            let status  = tradSesStatusDisplay ?? tradSesStatus ?? ""
-            return "\(session) — \(status)"
-
-        case .marketData:
-            var parts: [String] = []
-            if msgType == "X", let action = mdUpdateActionDisplay ?? mdUpdateAction { parts.append(action) }
-            let rawEntryType = mdEntryTypeDisplay ?? mdEntryType
-            if let et = rawEntryType?.replacingOccurrences(of: "Trading Session ", with: "") { parts.append(et) }
-            if let sz = formatFIXQty(mdEntrySize)         { parts.append(sz) }
-            if let id = securityID ?? symbol               { parts.append(id) }
-            if let px = formatFIXPrice(mdEntryPx)         { parts.append("@ \(px)") }
-            return parts.isEmpty ? nil : parts.joined(separator: " ")
-
-        case .ioi:
-            var parts: [String] = []
-            if let t = ioiTransTypeDisplay ?? ioiTransType { parts.append(t) }
-            if let s = sideDisplay                          { parts.append(s) }
-            let qty = formatFIXQty(ioiQty) ?? ioiQtyDisplay ?? ioiQty
-            if let q = qty                                  { parts.append(q) }
-            if let id = securityID ?? symbol                { parts.append("of \(id)") }
-            if let p = formatFIXPrice(price)               { parts.append("@ \(p)") }
-            return parts.isEmpty ? nil : parts.joined(separator: " ")
-
-        case .other:
-            return nil
-        }
-        }()
-        return primary ?? text
-    }
 }
 
 // MARK: - Init from FIXMessage

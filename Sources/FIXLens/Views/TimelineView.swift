@@ -108,10 +108,10 @@ struct TimelineView: View {
 
                     TableColumn("Type") { msg in
                         HStack(spacing: 5) {
-                            if tradeExecDotColor(msg.execType) != nil {
-                                Circle()
-                                    .fill(msg.category.color)
-                                    .frame(width: 7, height: 7)
+                            if ["F", "G", "H"].contains(msg.execType ?? "") {
+                                Image(systemName: "arrow.left.arrow.right.circle.fill")
+                                    .foregroundStyle(msg.category.color)
+                                    .imageScale(.small)
                             }
                             Text(msg.msgTypeName)
                                 .bold()
@@ -194,13 +194,13 @@ struct TimelineView: View {
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
                 .onCopyCommand {
                     guard let id = selection,
-                          let msg = viewModel.allSummaries.first(where: { $0.id == id }) else { return [] }
+                          let msg = viewModel.summary(for: id) else { return [] }
                     let text = viewModel.rawText(for: id) ?? msg.tradingSummary ?? msg.msgTypeName
                     return [NSItemProvider(object: text as NSString)]
                 }
                 .contextMenu(forSelectionType: FIXMessageSummary.ID.self) { ids in
                     if let id = ids.first,
-                       let msg = viewModel.allSummaries.first(where: { $0.id == id }) {
+                       let msg = viewModel.summary(for: id) {
                         if let summary = msg.tradingSummary {
                             Button("Copy Summary") { copyToPasteboard(summary) }
                         }
@@ -310,15 +310,6 @@ struct TimelineView: View {
     }
 
     // MARK: - Color helpers
-
-    private func tradeExecDotColor(_ execType: String?) -> Color? {
-        switch execType {
-        case "F": return .green
-        case "G": return .orange
-        case "H": return .red
-        default:  return nil
-        }
-    }
 
     private func sideColor(_ side: String?) -> Color {
         switch side {
@@ -465,7 +456,7 @@ private struct LiveIndicatorView: View {
 
 // MARK: - Pasteboard helper
 
-private func copyToPasteboard(_ string: String) {
+func copyToPasteboard(_ string: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(string, forType: .string)
 }

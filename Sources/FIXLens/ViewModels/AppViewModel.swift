@@ -47,11 +47,11 @@ final class AppViewModel {
         }
     }
 
-    /// Full detail message: computed from allMessages (live/paste) or loaded async (analysis).
+    /// Full detail message: O(1) lookup in live/paste mode, async-loaded in analysis mode.
     var selectedMessage: FIXMessage? {
         guard let id = selectedMessageID else { return nil }
         if viewMode == .analysis { return loadedDetailMessage }
-        return allMessages.first { $0.id == id }
+        return messageByID[id]
     }
 
     private(set) var loadedDetailMessage: FIXMessage? = nil
@@ -112,6 +112,10 @@ final class AppViewModel {
     @ObservationIgnored private var detectedDelimiter: FIXDelimiter = .pipe
     @ObservationIgnored private var tempDecompressedURL: URL? = nil
 
+    /// O(1) lookup tables kept in sync with allMessages / allSummaries.
+    @ObservationIgnored private var messageByID:  [UUID: FIXMessage] = [:]
+    @ObservationIgnored private var summaryByID:  [UUID: FIXMessageSummary] = [:]
+
     // MARK: - Derived
 
     var hasActiveFilters: Bool {
@@ -126,25 +130,34 @@ final class AppViewModel {
         return "\(shown) of \(total)"
     }
 
-    /// Distinct MsgType values present in allSummaries, for the Type filter picker.
-    var availableMsgTypes: [(type: String, name: String)] {
-        var seen = Set<String>()
-        return allSummaries.compactMap { msg in
-            guard let t = msg.msgType, seen.insert(t).inserted else { return nil }
-            return (type: t, name: msg.msgTypeName)
+    /// Distinct MsgType values present in allSummaries, kept sorted by name.
+    /// Updated incrementally as summaries arrive to avoid O(n) scans on every render.
+    private(set) var availableMsgTypes: [(type: String, name: String)] = []
+    @ObservationIgnored private var seenMsgTypes: Set<String> = []
+
+    private func updateMsgTypeCache(from new: [FIXMessageSummary]) {
+        var changed = false
+        for s in new {
+            guard let t = s.msgType, seenMsgTypes.insert(t).inserted else { continue }
+            availableMsgTypes.append((type: t, name: s.msgTypeName))
+            changed = true
         }
-        .sorted { $0.name < $1.name }
+        if changed { availableMsgTypes.sort { $0.name < $1.name } }
     }
 
     // MARK: - Actions
 
-    /// Returns the raw FIX text for a message ID.
-    /// Available immediately in live/paste mode; in analysis mode only when that
-    /// message is the currently loaded detail.
+    /// Returns the raw FIX text for a message ID (O(1) in live/paste mode).
+    /// In analysis mode only the currently loaded detail is available.
     func rawText(for id: FIXMessage.ID) -> String? {
-        if let msg = allMessages.first(where: { $0.id == id }) { return msg.rawText }
+        if let msg = messageByID[id] { return msg.rawText }
         if loadedDetailMessage?.id == id { return loadedDetailMessage?.rawText }
         return nil
+    }
+
+    /// O(1) summary lookup used by the timeline for copy/context-menu actions.
+    func summary(for id: FIXMessageSummary.ID) -> FIXMessageSummary? {
+        summaryByID[id]
     }
 
     func clearFilters() {
@@ -231,6 +244,10 @@ final class AppViewModel {
         allMessages          = []
         allSummaries         = []
         displayedSummaries   = []
+        availableMsgTypes    = []
+        seenMsgTypes         = []
+        messageByID          = [:]
+        summaryByID          = [:]
         selectedMessageID    = nil
         loadedDetailMessage  = nil
         sourceFilename       = nil
@@ -291,7 +308,11 @@ final class AppViewModel {
 
             // Use current file size as the tail's starting offset to avoid re-parsing
             // content that was already loaded above.
-            let tailOffset = (try? FileHandle(forReadingFrom: url).seekToEnd()) ?? UInt64(0)
+            let tailOffset: UInt64 = (try? {
+                let fh = try FileHandle(forReadingFrom: url)
+                defer { try? fh.close() }
+                return try fh.seekToEnd()
+            }()) ?? 0
             startTailingFile(url: url, startOffset: tailOffset)
         } catch {
             if accessing { url.stopAccessingSecurityScopedResource(); isSecurityScoped = false }
@@ -314,10 +335,14 @@ final class AppViewModel {
             analysisFileHandle = FileHandleActor(fileHandle: fh)
         }
 
-        isParsing      = true
-        parseProgress  = 0
-        allMessages    = []
-        allSummaries   = []
+        isParsing         = true
+        parseProgress     = 0
+        allMessages       = []
+        allSummaries      = []
+        availableMsgTypes = []
+        seenMsgTypes      = []
+        messageByID       = [:]
+        summaryByID       = [:]
         displayedSummaries = []
         selectedMessageID  = nil
         loadedDetailMessage = nil
@@ -325,6 +350,8 @@ final class AppViewModel {
         for await update in FIXParser.streamAnalysis(fileURL: url, dictionary: dictionary) {
             detectedDelimiter = update.delimiter
             allSummaries.append(contentsOf: update.batch)
+            for s in update.batch { summaryByID[s.id] = s }
+            updateMsgTypeCache(from: update.batch)
             let visible = showAdminMessages
                 ? update.batch
                 : update.batch.filter { !$0.isAdmin }
@@ -341,9 +368,13 @@ final class AppViewModel {
 
     private func runStreamingParse(_ content: String) async {
         isParsing          = true
-        parseProgress      = 0
-        allMessages        = []
-        allSummaries       = []
+        parseProgress     = 0
+        allMessages       = []
+        allSummaries      = []
+        availableMsgTypes = []
+        seenMsgTypes      = []
+        messageByID       = [:]
+        summaryByID       = [:]
         displayedSummaries = []
         selectedMessageID  = nil
         loadedDetailMessage = nil
@@ -352,7 +383,10 @@ final class AppViewModel {
         for await update in FIXParser.stream(content, dictionary: dict) {
             let summaries = update.batch.map { FIXMessageSummary(from: $0) }
             allMessages.append(contentsOf: update.batch)
+            for m in update.batch { messageByID[m.id] = m }
             allSummaries.append(contentsOf: summaries)
+            for s in summaries { summaryByID[s.id] = s }
+            updateMsgTypeCache(from: summaries)
             let visible = showAdminMessages
                 ? summaries
                 : summaries.filter { !$0.isAdmin }
@@ -366,6 +400,29 @@ final class AppViewModel {
     }
 
     // MARK: - Private: filter
+
+    private nonisolated static func matchesFilter(
+        _ msg: FIXMessageSummary,
+        showAdmin: Bool,
+        search: String,       // must be pre-lowercased
+        msgType: String?,
+        side: String?,
+        status: String?,
+        tradesOnly: Bool
+    ) -> Bool {
+        if !showAdmin && msg.isAdmin { return false }
+        if let t = msgType, msg.msgType   != t  { return false }
+        if let s = side,    msg.side      != s  { return false }
+        if let st = status, msg.ordStatus != st { return false }
+        if tradesOnly, !["F", "G", "H"].contains(msg.execType ?? "") { return false }
+        if !search.isEmpty {
+            return msg.msgTypeName.lowercased().contains(search)
+                || (msg.securityID?.lowercased().contains(search) ?? false)
+                || (msg.clOrdID?.lowercased().contains(search) ?? false)
+                || msg.sessionDisplay.lowercased().contains(search)
+        }
+        return true
+    }
 
     private func scheduleFilter() {
         filterTask?.cancel()
@@ -384,19 +441,10 @@ final class AppViewModel {
                 guard !Task.isCancelled else { return }
             }
             let result: [FIXMessageSummary] = await Task.detached {
-                summaries.filter { msg in
-                    if !showAdmin && msg.isAdmin { return false }
-                    if let t = msgType, msg.msgType != t { return false }
-                    if let s = side,    msg.side    != s { return false }
-                    if let st = status, msg.ordStatus != st { return false }
-                    if tradesOnly, !["F","G","H"].contains(msg.execType ?? "") { return false }
-                    if !search.isEmpty {
-                        return msg.msgTypeName.lowercased().contains(search)
-                            || (msg.securityID?.lowercased().contains(search) ?? false)
-                            || (msg.clOrdID?.lowercased().contains(search) ?? false)
-                            || msg.sessionDisplay.lowercased().contains(search)
-                    }
-                    return true
+                summaries.filter {
+                    AppViewModel.matchesFilter($0, showAdmin: showAdmin, search: search,
+                                              msgType: msgType, side: side, status: status,
+                                              tradesOnly: tradesOnly)
                 }
             }.value
             guard !Task.isCancelled else { return }
@@ -409,7 +457,7 @@ final class AppViewModel {
 
     private func loadDetailForSelectedSummary() async {
         guard let id = selectedMessageID,
-              let summary = allSummaries.first(where: { $0.id == id }) else {
+              let summary = summaryByID[id] else {
             loadedDetailMessage = nil
             return
         }
@@ -497,7 +545,10 @@ final class AppViewModel {
             await MainActor.run {
                 let newSummaries = newMessages.map { FIXMessageSummary(from: $0) }
                 self.allMessages.append(contentsOf: newMessages)
+                for m in newMessages { self.messageByID[m.id] = m }
                 self.allSummaries.append(contentsOf: newSummaries)
+                for s in newSummaries { self.summaryByID[s.id] = s }
+                self.updateMsgTypeCache(from: newSummaries)
 
                 // Apply active filters to only the new summaries
                 let showAdmin  = self.showAdminMessages
@@ -507,19 +558,10 @@ final class AppViewModel {
                 let status     = self.filterStatus
                 let tradesOnly = self.filterTradesOnly
 
-                let newVisible = newSummaries.filter { msg in
-                    if !showAdmin && msg.isAdmin { return false }
-                    if let t = msgType,  msg.msgType   != t  { return false }
-                    if let s = side,     msg.side      != s  { return false }
-                    if let st = status,  msg.ordStatus != st { return false }
-                    if tradesOnly, !["F","G","H"].contains(msg.execType ?? "") { return false }
-                    if !search.isEmpty {
-                        return msg.msgTypeName.lowercased().contains(search)
-                            || (msg.securityID?.lowercased().contains(search) ?? false)
-                            || (msg.clOrdID?.lowercased().contains(search) ?? false)
-                            || msg.sessionDisplay.lowercased().contains(search)
-                    }
-                    return true
+                let newVisible = newSummaries.filter {
+                    AppViewModel.matchesFilter($0, showAdmin: showAdmin, search: search,
+                                              msgType: msgType, side: side, status: status,
+                                              tradesOnly: tradesOnly)
                 }
 
                 self.displayedSummaries.append(contentsOf: newVisible)

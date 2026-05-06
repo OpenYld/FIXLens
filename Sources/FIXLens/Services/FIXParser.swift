@@ -153,7 +153,7 @@ struct FIXParser: Sendable {
             let name = dictionary.fieldName(for: tag)
             let desc = dictionary.fieldDescription(tag: tag, value: value)
 
-            fields.append(FIXField(id: UUID(), tag: tag, name: name, rawValue: value, description: desc))
+            fields.append(FIXField(id: fields.count, tag: tag, name: name, rawValue: value, description: desc))
         }
 
         guard !fields.isEmpty else { return nil }
