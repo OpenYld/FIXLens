@@ -109,7 +109,7 @@ final class AppViewModel {
     @ObservationIgnored private var sourceURL: URL? = nil
     @ObservationIgnored private var isSecurityScoped = false
     @ObservationIgnored private var analysisFileHandle: FileHandleActor? = nil
-    @ObservationIgnored private var detectedDelimiter: FIXDelimiter = .pipe
+    @ObservationIgnored private(set) var detectedDelimiter: FIXDelimiter = .pipe
     @ObservationIgnored private var tempDecompressedURL: URL? = nil
 
     /// O(1) lookup tables kept in sync with allMessages / allSummaries.
@@ -147,12 +147,26 @@ final class AppViewModel {
 
     // MARK: - Actions
 
-    /// Returns the raw FIX text for a message ID (O(1) in live/paste mode).
-    /// In analysis mode only the currently loaded detail is available.
+    /// Synchronous raw-text lookup — O(1) in live/paste mode.
+    /// In analysis mode returns only what is already in memory.
     func rawText(for id: FIXMessage.ID) -> String? {
         if let msg = messageByID[id] { return msg.rawText }
         if loadedDetailMessage?.id == id { return loadedDetailMessage?.rawText }
         return nil
+    }
+
+    /// Raw-text lookup for copy operations.
+    /// Falls back to an on-demand disk read in analysis mode so the caller
+    /// always gets the text regardless of whether the detail is pre-loaded.
+    func rawTextForCopy(for id: FIXMessage.ID) async -> String? {
+        if let fast = rawText(for: id) { return fast }
+        guard viewMode == .analysis, let summary = summaryByID[id] else { return nil }
+        return await FIXParser.loadFullMessage(
+            summary: summary,
+            fileHandle: analysisFileHandle,
+            delimiter: detectedDelimiter,
+            dictionary: dictionary
+        )?.rawText
     }
 
     /// O(1) summary lookup used by the timeline for copy/context-menu actions.

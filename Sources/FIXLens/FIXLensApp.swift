@@ -121,6 +121,43 @@ struct FIXLensCommands: Commands {
     }
 }
 
+// MARK: - Copy delimiter preference
+
+/// The field delimiter applied when copying raw FIX messages to the clipboard.
+enum CopyDelimiter: String, CaseIterable {
+    case asIs  = "asis"
+    case pipe  = "pipe"
+    case caret = "caret"
+    case space = "space"
+    case soh   = "soh"
+
+    var displayName: String {
+        switch self {
+        case .asIs:  return "As Is (keep source)"
+        case .pipe:  return "Pipe  |"
+        case .caret: return "Caret  ^"
+        case .space: return "Space"
+        case .soh:   return "SOH  \\u{01}  (wire format)"
+        }
+    }
+
+    /// Replaces the source delimiter with the target character.
+    /// Returns the original string unchanged when `.asIs`.
+    func apply(to text: String, source: FIXDelimiter) -> String {
+        guard self != .asIs else { return text }
+        let target: String
+        switch self {
+        case .asIs:  return text
+        case .pipe:  target = "|"
+        case .caret: target = "^"
+        case .space: target = " "
+        case .soh:   target = "\u{01}"
+        }
+        guard source.string != target else { return text }
+        return text.replacingOccurrences(of: source.string, with: target)
+    }
+}
+
 // MARK: - App delegate (SPM activation fix)
 
 private class AppDelegate: NSObject, NSApplicationDelegate {
@@ -168,9 +205,10 @@ struct FIXLensApp: App {
 // MARK: - Settings view
 
 private struct FIXLensSettingsView: View {
-    @AppStorage("fixlens.showLocalTime") private var showLocalTime = false
-    @AppStorage("fixlens.showAdmin")     private var showAdmin     = false
-    @AppStorage("fixlens.autoScroll")    private var autoScroll    = false
+    @AppStorage("fixlens.showLocalTime")   private var showLocalTime  = false
+    @AppStorage("fixlens.showAdmin")       private var showAdmin      = false
+    @AppStorage("fixlens.autoScroll")      private var autoScroll     = false
+    @AppStorage("fixlens.copyDelimiter")   private var copyDelimiter: CopyDelimiter = .space
 
     var body: some View {
         Form {
@@ -181,9 +219,20 @@ private struct FIXLensSettingsView: View {
             Section("Live Mode") {
                 Toggle("Auto-scroll to newest message", isOn: $autoScroll)
             }
+            Section("Copy") {
+                Picker("Field delimiter", selection: $copyDelimiter) {
+                    ForEach(CopyDelimiter.allCases, id: \.rawValue) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                Text("Replaces the source delimiter when copying raw FIX messages to the clipboard.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 360)
+        .frame(width: 400)
         .padding()
     }
 }

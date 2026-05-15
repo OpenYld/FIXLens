@@ -3,12 +3,12 @@ import AppKit
 
 struct TimelineView: View {
     @Bindable var viewModel: AppViewModel
-    @AppStorage("fixlens.columns") private var columnsRaw: String = ColumnRegistry.defaultEnabled
-    /// Local selection state decouples the Table's NSTableView from the @Observable
-    /// viewModel, preventing reentrant NSTableView delegate calls when the selection
-    /// binding write triggers an immediate @Observable notification during the
-    /// NSTableView selection-change callback.
-    @State private var selection: FIXMessageSummary.ID?
+    @AppStorage("fixlens.columns")       private var columnsRaw:     String = ColumnRegistry.defaultEnabled
+    @AppStorage("fixlens.copyDelimiter") private var copyDelimiter:  CopyDelimiter = .space
+    /// Multi-selection set; macOS conventions (click / ⌘-click / ⇧-click) come for free.
+    @State private var selection: Set<FIXMessageSummary.ID> = []
+    /// The most recently added item to the selection — drives the detail panel.
+    @State private var lastSelectedID: FIXMessageSummary.ID? = nil
     /// Tracks whether the table is currently scrolled to (or near) the bottom row.
     /// Auto-scroll only fires when true, so a user reading history is never hijacked.
     @State private var isAtBottom = true
@@ -96,160 +96,248 @@ struct TimelineView: View {
             if summaries.isEmpty {
                 emptyState
             } else {
-                Table(summaries, selection: $selection) {
-
-                    // ── Always visible ────────────────────────────────────
-                    TableColumn("Time") { (msg: FIXMessageSummary) in
-                        Text(msg.displayTime(local: viewModel.showLocalTime))
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(msg.category.color)
-                    }
-                    .width(min: 65, ideal: 90)
-
-                    TableColumn("Type") { msg in
-                        HStack(spacing: 5) {
-                            if ["F", "G", "H"].contains(msg.execType ?? "") {
-                                Image(systemName: "arrow.left.arrow.right.circle.fill")
-                                    .foregroundStyle(msg.category.color)
-                                    .imageScale(.small)
-                            }
-                            Text(msg.msgTypeName)
-                                .bold()
-                                .lineLimit(1)
-                                .foregroundStyle(msg.category.color)
-                        }
-                    }
-                    .width(min: 80, ideal: 120)
-
-                    // ── Toggleable ────────────────────────────────────────
-                    if cols.contains("session") {
-                        TableColumn("Session") { msg in
-                            Text(msg.sessionDisplay)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .width(min: 80, ideal: 150)
-                    }
-
-                    if cols.contains("symbol") {
-                        TableColumn("SecurityID") { msg in
-                            Text(msg.securityID ?? "")
-                                .bold()
-                        }
-                        .width(min: 50, ideal: 80)
-                    }
-
-                    if cols.contains("side") {
-                        TableColumn("Side") { msg in
-                            Text(msg.sideDisplay ?? msg.side ?? "")
-                                .bold()
-                                .foregroundStyle(sideColor(msg.side))
-                        }
-                        .width(min: 40, ideal: 70, max: 80)
-                    }
-
-                    if cols.contains("qty") {
-                        TableColumn("Qty") { msg in
-                            Text(msg.orderQty ?? "")
-                                .font(.system(.body, design: .monospaced))
-                        }
-                        .width(min: 50, ideal: 80)
-                    }
-
-                    if cols.contains("price") {
-                        TableColumn("Price") { msg in
-                            Text(msg.price ?? "")
-                                .font(.system(.body, design: .monospaced))
-                        }
-                        .width(min: 50, ideal: 80)
-                    }
-
-                    if cols.contains("ordStatus") {
-                        TableColumn("Status") { msg in
-                            Text(msg.ordStatusDisplay ?? msg.ordStatus ?? "")
-                                .foregroundStyle(statusColor(msg.ordStatus))
-                        }
-                        .width(min: 70, ideal: 110)
-                    }
-
-                    if cols.contains("summary") {
-                        TableColumn("Summary") { msg in
-                            Text(msg.tradingSummary ?? "")
-                                .lineLimit(1)
-                                .textSelection(.enabled)
-                        }
-                        // no width — takes remaining space
-                    }
-
-                    if cols.contains("clOrdID") {
-                        TableColumn("ClientId") { msg in
-                            Text(msg.category == .ioi ? (msg.ioiID ?? "") : (msg.clOrdID ?? ""))
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        .width(min: 80, ideal: 150)
-                    }
-                }
-                .tableStyle(.inset(alternatesRowBackgrounds: true))
-                .onCopyCommand {
-                    guard let id = selection,
-                          let msg = viewModel.summary(for: id) else { return [] }
-                    let text = viewModel.rawText(for: id) ?? msg.tradingSummary ?? msg.msgTypeName
-                    return [NSItemProvider(object: text as NSString)]
-                }
-                .contextMenu(forSelectionType: FIXMessageSummary.ID.self) { ids in
-                    if let id = ids.first,
-                       let msg = viewModel.summary(for: id) {
-                        if let summary = msg.tradingSummary {
-                            Button("Copy Summary") { copyToPasteboard(summary) }
-                        }
-                        if let raw = viewModel.rawText(for: id) {
-                            Button("Copy Raw FIX Message") { copyToPasteboard(raw) }
-                        }
-                        if msg.securityID != nil || msg.clOrdID != nil || msg.ioiID != nil {
-                            Divider()
-                        }
-                        if let v = msg.securityID {
-                            Button("Copy SecurityID: \(v)") { copyToPasteboard(v) }
-                        }
-                        if msg.category == .ioi, let v = msg.ioiID {
-                            Button("Copy IOIID: \(v)") { copyToPasteboard(v) }
-                        } else if let v = msg.clOrdID {
-                            Button("Copy ClOrdID: \(v)") { copyToPasteboard(v) }
-                        }
-                    }
-                }
-                // Sync local selection → viewModel (user clicked a row)
-                .onChange(of: selection) { _, newID in
-                    viewModel.selectedMessageID = newID
-                }
-                // Sync viewModel → local selection (external reset, e.g. clear/new file)
-                .onChange(of: viewModel.selectedMessageID) { _, newID in
-                    if selection != newID { selection = newID }
-                }
-                // Inject the scroll position observer so we know when the user
-                // manually scrolls away from the bottom (pausing auto-scroll).
-                .background(
-                    ScrollPositionObserver(isAtBottom: $isAtBottom)
-                        .frame(width: 0, height: 0)
-                        .allowsHitTesting(false)
-                )
-                // Fire auto-scroll only when: toggle on + no selection + actually at bottom.
-                .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
-                    guard viewModel.autoScroll,
-                          viewModel.selectedMessageID == nil,
-                          isAtBottom else { return }
-                    scrollToBottom()
-                }
-                // When the auto-scroll toggle is flipped on, jump to the bottom immediately
-                // so the user is back at the live edge. This also resets isAtBottom.
-                .onChange(of: viewModel.autoScroll) { _, newValue in
-                    if newValue { scrollToBottom() }
-                }
+                messageTable(summaries)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Message table
+
+    @ViewBuilder
+    private func messageTable(_ summaries: [FIXMessageSummary]) -> some View {
+        Table(summaries, selection: $selection) {
+            tableColumns
+        }
+        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .onCopyCommand(perform: copyCommandItems)
+        .contextMenu(forSelectionType: FIXMessageSummary.ID.self) { ids in
+            tableContextMenu(for: ids)
+        }
+        .onChange(of: selection) { oldIDs, newIDs in
+            selectionDidChange(from: oldIDs, to: newIDs)
+        }
+        .onChange(of: viewModel.selectedMessageID) { _, newID in
+            viewModelSelectionDidChange(to: newID)
+        }
+        .background(
+            ScrollPositionObserver(isAtBottom: $isAtBottom)
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        )
+        .onReceive(NotificationCenter.default.publisher(for: .scrollToBottom)) { _ in
+            guard viewModel.autoScroll,
+                  viewModel.selectedMessageID == nil,
+                  isAtBottom else { return }
+            scrollToBottom()
+        }
+        .onChange(of: viewModel.autoScroll) { _, newValue in
+            if newValue { scrollToBottom() }
+        }
+    }
+
+    @TableColumnBuilder<FIXMessageSummary, Never>
+    private var tableColumns: some TableColumnContent<FIXMessageSummary, Never> {
+        TableColumn("Time") { (msg: FIXMessageSummary) in
+            Text(msg.displayTime(local: viewModel.showLocalTime))
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(msg.category.color)
+        }
+        .width(min: 65, ideal: 90)
+
+        TableColumn("Type") { (msg: FIXMessageSummary) in
+            HStack(spacing: 5) {
+                if ["F", "G", "H"].contains(msg.execType ?? "") {
+                    Image(systemName: "arrow.left.arrow.right.circle.fill")
+                        .foregroundStyle(msg.category.color)
+                        .imageScale(.small)
+                }
+                Text(msg.msgTypeName)
+                    .bold()
+                    .lineLimit(1)
+                    .foregroundStyle(msg.category.color)
+            }
+        }
+        .width(min: 80, ideal: 120)
+
+        if cols.contains("session") {
+            TableColumn("Session") { (msg: FIXMessageSummary) in
+                Text(msg.sessionDisplay)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .width(min: 80, ideal: 150)
+        }
+
+        if cols.contains("symbol") {
+            TableColumn("SecurityID") { (msg: FIXMessageSummary) in
+                Text(msg.securityID ?? "").bold()
+            }
+            .width(min: 50, ideal: 80)
+        }
+
+        if cols.contains("side") {
+            TableColumn("Side") { (msg: FIXMessageSummary) in
+                let display = msg.sideDisplay ?? msg.side ?? ""
+                Text(display).bold().foregroundStyle(sideColor(msg.side))
+            }
+            .width(min: 40, ideal: 70, max: 80)
+        }
+
+        if cols.contains("qty") {
+            TableColumn("Qty") { (msg: FIXMessageSummary) in
+                let qty: String = msg.orderQty ?? ""
+                Text(qty).font(.system(.body, design: .monospaced))
+            }
+            .width(min: 50, ideal: 80)
+        }
+
+        if cols.contains("price") {
+            TableColumn("Price") { (msg: FIXMessageSummary) in
+                let px: String = msg.price ?? ""
+                Text(px).font(.system(.body, design: .monospaced))
+            }
+            .width(min: 50, ideal: 80)
+        }
+
+        if cols.contains("ordStatus") {
+            TableColumn("Status") { (msg: FIXMessageSummary) in
+                let display = msg.ordStatusDisplay ?? msg.ordStatus ?? ""
+                Text(display).foregroundStyle(statusColor(msg.ordStatus))
+            }
+            .width(min: 70, ideal: 110)
+        }
+
+        if cols.contains("summary") {
+            TableColumn("Summary") { (msg: FIXMessageSummary) in
+                Text(msg.tradingSummary ?? "").lineLimit(1).textSelection(.enabled)
+            }
+        }
+
+        if cols.contains("clOrdID") {
+            TableColumn("ClientId") { (msg: FIXMessageSummary) in
+                let clientID: String = msg.category == .ioi ? (msg.ioiID ?? "") : (msg.clOrdID ?? "")
+                Text(clientID)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .width(min: 80, ideal: 150)
+        }
+    }
+
+    @ViewBuilder
+    private func tableContextMenu(for ids: Set<FIXMessageSummary.ID>) -> some View {
+        if ids.isEmpty {
+            EmptyView()
+        } else if ids.count == 1, let id = ids.first, let msg = viewModel.summary(for: id) {
+            singleSelectionMenu(id: id, msg: msg)
+        } else {
+            multiSelectionMenu(for: ids)
+        }
+    }
+
+    @ViewBuilder
+    private func singleSelectionMenu(id: FIXMessageSummary.ID, msg: FIXMessageSummary) -> some View {
+        if let summary = msg.tradingSummary {
+            Button("Copy Summary") { copyToPasteboard(summary) }
+        }
+        Button("Copy Raw FIX Message") {
+            Task { @MainActor in
+                guard let raw = await viewModel.rawTextForCopy(for: id) else { return }
+                copyToPasteboard(applyCopyDelimiter(raw))
+            }
+        }
+        if msg.securityID != nil || msg.clOrdID != nil || msg.ioiID != nil {
+            Divider()
+        }
+        if let v = msg.securityID {
+            Button("Copy SecurityID: \(v)") { copyToPasteboard(v) }
+        }
+        if msg.category == .ioi, let v = msg.ioiID {
+            Button("Copy IOIID: \(v)") { copyToPasteboard(v) }
+        } else if let v = msg.clOrdID {
+            Button("Copy ClOrdID: \(v)") { copyToPasteboard(v) }
+        }
+    }
+
+    @ViewBuilder
+    private func multiSelectionMenu(for ids: Set<FIXMessageSummary.ID>) -> some View {
+        let orderedIDs = viewModel.displayedSummaries.map(\.id).filter { ids.contains($0) }
+        let summaryTexts = orderedIDs.compactMap { viewModel.summary(for: $0)?.tradingSummary }
+        if !summaryTexts.isEmpty {
+            Button("Copy \(ids.count) Summaries") {
+                copyToPasteboard(summaryTexts.joined(separator: "\n"))
+            }
+        }
+        Button("Copy \(ids.count) Raw FIX Messages") {
+            Task { @MainActor in
+                var texts: [String] = []
+                for oid in orderedIDs {
+                    if let raw = await viewModel.rawTextForCopy(for: oid) {
+                        texts.append(applyCopyDelimiter(raw))
+                    }
+                }
+                if !texts.isEmpty { copyToPasteboard(texts.joined(separator: "\n")) }
+            }
+        }
+    }
+
+    // MARK: - Copy command
+
+    private func copyCommandItems() -> [NSItemProvider] {
+        guard !selection.isEmpty else { return [] }
+        let orderedIDs = viewModel.displayedSummaries.map(\.id).filter { selection.contains($0) }
+        let rawTexts = orderedIDs.compactMap { viewModel.rawText(for: $0) }.map { applyCopyDelimiter($0) }
+        if !rawTexts.isEmpty {
+            return [NSItemProvider(object: rawTexts.joined(separator: "\n") as NSString)]
+        }
+        let fallback = orderedIDs.compactMap { id -> String? in
+            let msg = viewModel.summary(for: id)
+            return msg?.tradingSummary ?? msg?.msgTypeName
+        }
+        if !fallback.isEmpty {
+            return [NSItemProvider(object: fallback.joined(separator: "\n") as NSString)]
+        }
+        return []
+    }
+
+    // MARK: - Selection sync
+
+    private func selectionDidChange(from oldIDs: Set<FIXMessageSummary.ID>, to newIDs: Set<FIXMessageSummary.ID>) {
+        if newIDs.isEmpty {
+            lastSelectedID = nil
+            viewModel.selectedMessageID = nil
+        } else {
+            let added = newIDs.subtracting(oldIDs)
+            if let justAdded = added.first {
+                lastSelectedID = justAdded
+                viewModel.selectedMessageID = justAdded
+            } else if let last = lastSelectedID, newIDs.contains(last) {
+                // Primary still in selection — keep detail panel as-is.
+            } else {
+                lastSelectedID = newIDs.first
+                viewModel.selectedMessageID = newIDs.first
+            }
+        }
+    }
+
+    private func viewModelSelectionDidChange(to newID: FIXMessageSummary.ID?) {
+        if let newID {
+            if !selection.contains(newID) {
+                selection = [newID]
+                lastSelectedID = newID
+            }
+        } else {
+            selection = []
+            lastSelectedID = nil
+        }
+    }
+
+    // MARK: - Copy helper
+
+    private func applyCopyDelimiter(_ text: String) -> String {
+        copyDelimiter.apply(to: text, source: viewModel.detectedDelimiter)
     }
 
     // MARK: - Scroll helpers
