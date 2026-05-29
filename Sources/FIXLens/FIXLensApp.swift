@@ -165,11 +165,6 @@ private class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
     }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
-        NotificationCenter.default.post(name: .openFileRequest, object: url)
-    }
 }
 
 // MARK: - App

@@ -198,9 +198,8 @@ struct ContentView: View {
             }
         }
 
-        // MARK: - Dock-icon / Finder open
-        .onReceive(NotificationCenter.default.publisher(for: .openFileRequest)) { note in
-            guard let url = note.object as? URL else { return }
+        // MARK: - Finder / dock-icon open
+        .onOpenURL { url in
             Task { await viewModel.loadFromURL(url) }
         }
 

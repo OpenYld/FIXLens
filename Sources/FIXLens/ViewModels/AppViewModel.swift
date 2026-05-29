@@ -15,8 +15,7 @@ enum ViewMode {
 // MARK: - Scroll notification
 
 extension Notification.Name {
-    static let scrollToBottom  = Notification.Name("FIXLens.scrollToBottom")
-    static let openFileRequest = Notification.Name("FIXLens.openFileRequest")
+    static let scrollToBottom = Notification.Name("FIXLens.scrollToBottom")
 }
 
 // MARK: - AppViewModel
