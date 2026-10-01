@@ -251,9 +251,22 @@ struct FIXParser: Sendable {
         )
     }
 
-    /// For space-delimited input: extract only tokens that look like tag=value (tag is all digits).
+    /// For space-delimited input: extract tokens that look like tag=value (tag is all digits).
+    /// Words that don't start a new tag are joined onto the previous value, so free-text
+    /// fields such as 58=Text keep their embedded spaces. Anything after CheckSum (10) is ignored.
     private static func extractSpaceDelimitedTokens(from raw: String) -> [String] {
-        raw.components(separatedBy: " ").filter { looksLikeTagValue($0) }
+        var tokens: [String] = []
+        var sawCheckSum = false
+        for word in raw.components(separatedBy: " ") {
+            if looksLikeTagValue(word) {
+                if sawCheckSum { break }
+                tokens.append(word)
+                sawCheckSum = word.hasPrefix("10=")
+            } else if !tokens.isEmpty, !sawCheckSum {
+                tokens[tokens.count - 1] += " " + word
+            }
+        }
+        return tokens
     }
 
     private static func looksLikeTagValue(_ token: String) -> Bool {
